@@ -1,0 +1,35 @@
+
+
+
+
+##functions to store the value somewhere
+randomIntGenerator:
+li $v0, 42 #random int gen syscall
+la $a1, 14 #setting upper bound for RNG
+syscall
+
+bgt $a0, 10, randomIntGeneratorContinue
+li $a0, 0 #flattening values, applying weight
+randomIntGeneratorContinue:
+lw $t3, $a0 #
+endif:
+jr $ra ##really return
+
+
+.text
+li $t1, 20 #load size of X axis rows
+li $t2, 19 #load size of y axis cols
+
+mul $a0, $t1, $t2 # Get total memory occupied by the array given 1 byte size
+sll $a0, $a0, 2 # Shift by 2, ints in MIPS are 4 bytes long (32bit) 
+
+li $v0, 9 #allocates heap memory for the array
+syscall
+move $s0, $v0 #store array base address in $s0
+
+jal randomIntGenerator
+
+
+### reference: row major formula: base_address + type_size((nCols * rowIndex)+colIndex)
+### reference: column major formula: base_address + type_size((nRows *colIndex)+rowIndex)
+
