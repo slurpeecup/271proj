@@ -23,10 +23,13 @@ li $s1, 400 # assignment of all tile count to register $s1
 add $t0, $zero, 0 #clearing value in $t0
 
 init_tile_val: #initializes value of each tile
+
 bge $t0, $s1, exit_init_tile_val # "while $t0 != 400
 addi $t0, $t0, 1 #incrementing $t0 for the while loop
 mul $t1, $t0, 4 #shift index by byte size of integer
 add $t2, $s0, $t1 # add base address + offset into $t2
+
+
 ###################### random number generated in this sub block
 li $a1, 14 #setting the upper bounds of the RNG
 li $v0, 42 #loading the syscall code for RNG into the $v0 register
@@ -38,10 +41,12 @@ sb $a0, 0($t2) #store value in argument register to $t2
 
 #### $t2 is an address register, this code is not correct. need to load value stored in @ $t2 as the wiper moves
 ### then store back in. basically everything between these points is wrong
-# XOXXO.0
-bge $t2, 10, next_from_flatten #begin function to flatten values less than ten down to 0 if $t2 lt 10
-addi $t2, $zero, 0  #flattening
+# XOXO.0
 
+bge $t2, 10, next_from_flatten #begin function to flatten values less than ten down to 0 if $t2 lt 10
+lw $t3, 0($t2)
+addi $t3, $zero, 0  #flattening
+sw $t3, 0($t2)
 next_from_flatten:
 
 ###this block purely for debugging, ignore.
