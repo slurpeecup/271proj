@@ -6,13 +6,20 @@
 lions_won: .asciiz "Rabbits have gone extinct, Lions win." 
 rabbits_won: .asciiz "Lions have gone extinct, Rabbits win."
 simulation_begin: .asciiz "Starting simulation\n"
-
+newline: .asciiz"\n"
 .text
 
 li $v0, 4
 la $a0, simulation_begin 
 
 syscall
+
+
+jal gameboard_generation
+jal print_initial_gameboard
+li $v0, 10
+syscall
+
 
 gameboard_generation:
 
@@ -31,34 +38,62 @@ add $t2, $s0, $t1 # add base address + offset into $t2
 
 
 ###################### random number generated in this sub block
-li $a1, 14 #setting the upper bounds of the RNG
+li $a1, 11#setting the upper bounds of the RNG
 li $v0, 42 #loading the syscall code for RNG into the $v0 register
 syscall
 ######################
 
 sb $a0, 0($t2) #store value in argument register to $t2
-
-
-#### $t2 is an address register, this code is not correct. need to load value stored in @ $t2 as the wiper moves
-### then store back in. basically everything between these points is wrong
-# XOXO.0
-
-bge $t2, 10, next_from_flatten #begin function to flatten values less than ten down to 0 if $t2 lt 10
 lw $t3, 0($t2)
+
+bgt $t3, 4, next_from_flatten #begin function to flatten values less than ten down to 0 if $t2 lt 10
 addi $t3, $zero, 0  #flattening
 sw $t3, 0($t2)
 next_from_flatten:
 
 ###this block purely for debugging, ignore.
+##lb $a0, ($t2)
+##li $v0, 1
+##syscall
+### x0x0x0
+j init_tile_val
+exit_init_tile_val:
+jr $ra
+################ number generation step over.
+
+print_initial_gameboard:
+addi $t0, $zero, 0
+
+row_print:
+beq $t3, 20, end_row_print #while $t3 != 20"
+addi $t0, $zero, 0
+
+column_print:
+beq $t0, 20, end_col_print # "while $t0 != 20"
+mul $t1, $t0, 4 #shift index by byte size of integer
+mul $t4,$t1, $t3 
+add $t2, $s0, $t4 # add base address + offset into $t2
+
+
 lb $a0, ($t2)
 li $v0, 1
 syscall
-####kthxbye
+addi $t0, $t0, 1 #incrementing $t0 for the while loop
+j column_print
 
-# XOXXO.0
+end_col_print:
+addi $t3, $t3, 1 #incrementing $t3 for the prior while loop
+li $v0, 4
+la $a0, newline
+syscall
+j row_print
 
-j init_tile_val
+end_row_print:
+jr $ra
 
 
 
-exit_init_tile_val:
+
+
+
+
