@@ -7,6 +7,10 @@ lions_won: .asciiz "Rabbits have gone extinct, Lions win."
 rabbits_won: .asciiz "Lions have gone extinct, Rabbits win."
 simulation_begin: .asciiz "Starting simulation\n"
 newline: .asciiz".\n"
+whitespace: .ascii " "
+lion_print: .ascii "L"
+rabbit_print: .ascii "R"
+food_print: .ascii "F"
 .text
 
 li $v0, 4
@@ -74,7 +78,6 @@ column_print:
 beq $t0, 20, end_col_print # "while $t0 != 20"
 
 mul $t1, $t0, 4 #shift index by byte size of integer
-
 t1equals0: #guarantees first row is printed
 bne $t3, 0, t1notequals0
 mul $t4, $t3, 1
@@ -88,9 +91,26 @@ add $t2, $s0, $t4 # add base address + offset into $t2
 j exit_t1equals0
 
 exit_t1equals0:
+lw $t9, 0($t2) ##pull value in t2 elsewhere
+bne $t9, $zero, entity_printer ##if not zero, print through this instruction tree
 lb $a0, ($t2)
 li $v0, 1
 syscall
+j column_print ## return to the same place otherwise
+entity_printer:
+##try_food
+bne $t9, 13, try_lion
+la $a0, food_print
+try_lion:
+bne $t9, 12, try_rabbit
+la $a0, lion_print
+try_rabbit:
+bne $t9, 11, entity_print
+la $a0, rabbit_print
+entity_print:
+li $v0, 4
+syscall
+conclude_entity_printer:
 addi $t0, $t0, 1 #incrementing $t0 for the while loop
 j column_print
 
@@ -106,6 +126,13 @@ jr $ra
 
 ################################################################################## PSEUDOCODE
 
+######################## initialize_array
+###### allocate space for game board on stack, then fill array w/ values from random number generator. 
+######################## flatten / next_from_flatten
+###### if value generated is less than or equal to 10, set to 0
+######################## print_initial_gameboard
+###### loop through each array element and print w/ appropriate spacers (in development)
+########################
 
 ##### play_round
 #### loop through each array element individually, left to right top to bottom. 
@@ -196,3 +223,9 @@ jr $ra
 
 ##### lion_decision_tree
 ### Look clockwise, starting @ pos 2
+### if find rabbit, jump to immediately 
+### if find food, jump to immediately.
+### if find empty, store value. Jump to subsequent empty or food.
+
+
+############################# 
