@@ -23,7 +23,7 @@ addi $sp, $sp, 4
 
 .text
 la $a3, frameBuffer ## loads address of frame buffer into $a3$
-addi $t1, $a3, 0x3FC7C ##max size of frame buffer is arr width * arr length * bitwidth
+addi $t1, $a3, 0x40000 ##max size of frame buffer is arr width * arr length * bitwidth
 RST_TICKER
 li $t3, 0x0000FF #loads color 1 into $t9
 li $a2, 0xFFFFFF #loads color 2 into $t3
@@ -52,9 +52,6 @@ add $a3, $a3, 160
 jal paint_R
 
 RST_FRAMEPTR
-add $a3, $a3, 128
-jal erase_char
-RST_FRAMEPTR
 add $a3, $a3, 192
 jal erase_char
 li $v0, 10
@@ -70,8 +67,6 @@ j start_paint #jump back to start
 exit_paint:
 jr $ra
 
-
-### PAINTS A FUCKING L LMAO
 paint_L:
 RST_TICKER ## resets counter variable
 addi $a2, $zero, 0xff6e7f

@@ -1,6 +1,6 @@
 .data
-
-frameBuffer: .space 0x10000
+frameBuffer: .space 0x40000
+gameboard: .word 0:1024
 
 .macro RST_FRAMEPTR
 la $a3, frameBuffer 
@@ -24,7 +24,6 @@ lw $ra, 0($sp)
 addi $sp, $sp, 4
 .end_macro
 
-gameboard: .word 0:1024
 
 lions_won: .asciiz "Rabbits have gone extinct, Lions win." 
 rabbits_won: .asciiz "Lions have gone extinct, Rabbits win."
@@ -70,10 +69,62 @@ syscall
 .end_macro
 
 
-.macro  print_grid ##prints grid... self explanatory
+.text
+
+### initialize gameboard
+
+main:
+ li $t0, 0 # loop incrementer
+ li $t1, 0 # pos tracker 4 array
+ la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space
+ la $s6, frameBuffer
+ la $s7, gameboard
+  game_init: # initialize the values in the gameboard
+   
+   bge $t0, 1024, init_done # while board is not filled
+
+   li $a1, 15 #limit for RNG, to be replaced w/ LFSR altho discuss w arnie.
+   li $v0, 42 # syscall for rng 
+   syscall 
+
+   move $t1, $a0 #store RNG value into a tempreg
+  
+   bgt $t1, 10, ctne_fr_norm #if equal to or below 10, normalize to 0,
+   # indicating an open space for the player. else, continue from norm.
+   addi $t1, $zero, 0 ## normalizes the value
+   j ctne_fr_norm
+   ctne_fr_norm:
+   sw $t1, 0($t2) # stores the RNG value into the address indicated by $t2
+   addi $t2, $t2, 4 # offsets $t2 for the next element, heap grows up
+   addi $t0, $t0, 1 # increments counter
+   j game_init ### jump to top until condition is met
+   
+ init_done:
+ 
+ la $a0, simulation_begin
+ li $v0, 4
+ syscall
+la $a3, frameBuffer
+li $t1, 0x1004fffc
+li $t0, 0
+
+jal paint_background
+
+#jal print_grid
+
+jal paint_full_grid
+ 
+ li $v0, 10 
+ syscall
+ 
+ 
+ 
+########################################## 
+ print_grid: ##prints grid... self explanatory
  li $t0, 0 ## column counter
  li $t1, 0 ## row counter
  la $t2, gameboard ## initial gameboard position
+ la $s7, gameboard
 
   print_rows: ## printing every row
    beq $t1, 32, exit_rows ## printed everything, jump to end sequence
@@ -138,61 +189,22 @@ addi $t1, $t1, 1
 j print_rows
 
 exit_rows:
-
-
-.end_macro 
-
-
-
-.text
-
-### initialize gameboard
-
-main:
- li $t0, 0 # loop incrementer
- li $t1, 0 # pos tracker 4 array
- la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space
-  
-  game_init: # initialize the values in the gameboard
-   
-   bge $t0, 1024, init_done # while board is not filled
-
-   li $a1, 15 #limit for RNG, to be replaced w/ LFSR altho discuss w arnie.
-   li $v0, 42 # syscall for rng 
-   syscall 
-
-   move $t1, $a0 #store RNG value into a tempreg
-  
-   bgt $t1, 10, ctne_fr_norm #if equal to or below 10, normalize to 0,
-   # indicating an open space for the player. else, continue from norm.
-   addi $t1, $zero, 0 ## normalizes the value
-   j ctne_fr_norm
-   ctne_fr_norm:
-   sw $t1, 0($t2) # stores the RNG value into the address indicated by $t2
-   addi $t2, $t2, 4 # offsets $t2 for the next element, heap grows up
-   addi $t0, $t0, 1 # increments counter
-   j game_init ### jump to top until condition is met
-   
- init_done:
- la $a0 simulation_begin
- li $v0, 4
- syscall
-
-print_grid
+jr $ra
  
- li $v0, 10 
- syscall
- 
+
  
 ############SPRITE PAINT FUNCTIONS#########
 ###########################################
 ###########################################
 paint_background:
-addi $a2, $zero, 0xffe6ba
+addi $a2, $zero, 0xffe6ba ## color: sand
+li $t1, 0x40000
+li $t0, 0
 start_paint:
-beq $a3, $t1, exit_paint #if reach end, branch to exit paint
+beq $t0, $t1, exit_paint #if reach end, branch to exit paint
 sw $a2, 0($a3) #store colore $t9 into the address of $a3
 addi $a3, $a3, 4 #add into $a3, $a3 + 4
+addi $t0, $t0, 4
 j start_paint #jump back to start
 exit_paint:
 jr $ra
@@ -318,7 +330,7 @@ addi $a3, $a3, 4 ### shunt forward 1 px to give rounded edge
 paint_F_flat_bottom: ### draw bottom row of pill
 beq $t9, 6, paint_F_flat_bottom_end
 addi $a3, $a3, 4
-sw $a2, 0($a3)
+lw $a2, 0($a3)
 addi $t9, $t9, 1
 j paint_F_flat_bottom
 paint_F_flat_bottom_end:
@@ -391,16 +403,14 @@ RST_TICKER
 RST_TICKER_2
 addi $a2, $zero, 0xffe6ba
 stack_push
-sw $ra 0($sp)
 jal paint_S_row_loop
 return_from_paint_S:
-lw $ra 0($sp)
 stack_pop
 jr $ra
 
 ###########################################
 ###########################################
-paint_one_entity:
+paint_unit:
 bne $a2, 27, exit_set_combat_X############# BIG WARNING CUS I DIDN'T DOCUMENT ANYTHING
 #$a2 ONLY STORES COLOR VALUE AFTER ENTITY TYPE IS DETERMINED
 set_combat_X:
@@ -434,7 +444,7 @@ stack_pop
 j paint_unit_complete
 exit_food_X:  
 
-beq $a2, 11, exit_stone_X
+bne $a2, 11, exit_stone_X
 set_stone_X:
 stack_push
 jal paint_S
@@ -442,13 +452,61 @@ stack_pop
 j paint_unit_complete
 exit_stone_X: 
 
-beq $a2, 0
+##bne $a2, 0, paint_unit_complete
 set_empty_char_x:
 stack_push
 jal erase_char
 stack_pop
 paint_unit_complete:
 jr $ra
+###########################################
+###########################################
+paint_full_grid:
+li $a2, 0
+li $a3, 0
+li $t0, 0 ## resetting tickers if not already handled
+li $t1, 0 ## designating $t1 as row ticker
+la $t3, gameboard
+RST_TICKER
+RST_TICKER_2
+
+paint_per_array_row:
+
+beq $t1, 32, exit_paint_per_array_row
+li $t0, 0
+paint_per_array_col:
+beq $t0, 32, exit_paint_per_array_col
+
+sll $a3, $t1, 5 
+add $a3, $a3, $t0
+sll $a3, $a3, 2
+add $a3, $a3 ,$s7
+
+lw $a2, 0($a3)
+
+sll $t2, $t0, 3## scaled col value
+sll $t3, $t1, 8 ## scaled row value
+sll $t3, $t3, 3 ## rowIndex * scale * numCols)
+add $a3, $t3, $t2 ## ((rowIndex * scale * numCols) + col Index * scale)
+sll $a3, $a3, 2 ## ((rowIndex * scale * numCols) + col Index * scale) << data_byte_width
+add $a3, $a3, $s6
+stack_push 
+jal paint_unit
+stack_pop
+
+
+addi $t0, $t0, 1 ## incrementing the column counter
+j paint_per_array_col
+exit_paint_per_array_col:
+addi $t1, $t1, 1 ### incrementing the row counter
+j paint_per_array_row
+exit_paint_per_array_row:
+exit_paint_full_grid:
+jr $ra
+###################################
+
+###########################################
+###########################################
 
 
 ###########################################
