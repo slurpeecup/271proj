@@ -1,6 +1,8 @@
 .data
 frameBuffer: .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows * 32 rows. 256 * 32 * 32 = 262144 byte or 0x40000 bytes
 gameboard: .word 0:1023 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
+surroundingBuffer: .space 0x48
+wrappedAddresses: .space 0x48
 
 .macro RST_FRAMEPTR ### this macro resets the value of $a3 to the frame pointer
 la $a3, frameBuffer ### this trick is useful in functions where $a3 is a parameter 
@@ -33,6 +35,22 @@ la $s7, frameBuffer
 la $s7 gameboard
 .end_macro
 
+.macro s7wrappedAddresses
+la $s7, wrappedAddresses
+.end_macro
+
+.macro s7surroundingBuffer
+la $s7, wrappedAddresses
+.end_macro
+
+.macro wraparound_rowconst
+addi $t5, $t1, 0 ## this was honestly just too trivial to turn into a function, 
+.end_macro       ## but a necessary abstraction for the sake of consistency
+
+.macro wraparound_colconst
+addi $t4, $t1, 0 ## this was honestly just too trivial to turn into a function, 
+.end_macro       ## but a necessary abstraction for the sake of consistency
+
 ####################### CONSOLE OUTPUT SHIT, PROBABLY DEPRECATED ################################
 lions_won: .asciiz "Rabbits have gone extinct, Lions win." 
 rabbits_won: .asciiz "Lions have gone extinct, Rabbits win."
@@ -42,6 +60,7 @@ simulation_begin: .asciiz "Starting simulation\n"
 
 
 main:
+######## s3, s4 reserved for end game conditions.
  li $t0, 0 # loop incrementer
  li $t1, 0 # pos tracker 4 array
  la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space 
@@ -52,10 +71,9 @@ main:
  syscall
  
 jal paint_background
-
-#jal print_grid
-
 jal paint_full_grid
+
+########################
  
  li $v0, 10 
  syscall
@@ -395,23 +413,242 @@ exit_paint_per_array_row:
 exit_paint_full_grid:
 jr $ra
 ###################################
+# assuming iterative looping through the array
+# we will have a row index, a column index, and 
+# we know we have a fixed number of columns because
+# fuck dynamically allocating that lmao.
+# lets assume $t0 is our column index, and $t1
+# is our row index.
 
-###########################################
-###########################################
+# given these parameters, we can easily write a suite of functions
+
+# suite A : gauge surroundings :: universal to both lions and rabbits
+
+# if a lion or rabbit is encountered, its surroundings are logged into the
+# surroundingBuffer. First, we will need to overcome wraparound.
 
 
-###########################################
-###########################################
+wraparound_rowminus:
+# laboring under the assumption that $t1 is our row index
+addi $t5, $t1, 0 #t4 contains the new row index
+addi $t5, $t5, 31 # (rowIndex -1 + 32)
+div $t5, $s5 # div w/ intent to access remainder from mfhi, effectively mod32
+mfhi $t5 # $t5 mod 32
+end_wraparound_rowminus:
+jr $ra
 
- ################################################################################## PSEUDOCODE
+wraparound_rowplus:
+# laboring under the assumption that $t1 is our row index
+addi $t5, $t1, 0 #t5 contains the new row index
+addi $t5, $t5, 33 # (rowIndex +1 + 32)
+div $t5, $s5 # div w/ intent to access remainder from mfhi, effectively mod31
+mfhi $t5 # $t4 mod 32
+end_wraparound_rowplus:
+jr $ra
 
-######################## initialize_array
-###### allocate space for game board on stack, then fill array w/ values from random number generator. 
-######################## flatten / next_from_flatten
-###### if value generated is less than or equal to 10, set to 0
-######################## print_initial_gameboard
-###### loop through each array element and print w/ appropriate spacers (in development)
-########################
+wraparound_colminus:
+#laboring under the assumption that $t0 is our column index
+addi $t4, $t0, 0 # $t4 = col index
+addi $t4, $t4, 31 # (colindex - 1 + 32)
+div $t4, $s5 #mod
+mfhi $t4 #mod
+end_wraparound_colminus:
+jr $ra
+
+wraparound_colplus:
+#laboring under the assumption that $t0 is our column index
+addi $t4, $t0, 0 # $t4 = col index
+addi $t4, $t4, 31 # (colindex - 1 + 32)
+div $t4, $s5 #mod
+mfhi $t4 #mod
+end_wraparound_colplus:
+jr $ra
+
+row_major_address_calc:
+s7gameboard
+### at this point, consolidate everything into $t5. other tempregs now free after use
+### the value of $t5 // $t4 governed by the wraparound funcs
+mul $t5, $t5, $s5 #(row_index * numcols)
+add $t5, $t5, $t4 # (row_index * numcols) + col Index)
+sll $t5, $t5, 2 # [(row_index * numcols) + col Index] << bytewidth
+add $t5, $t5, $s7 # base address + {[(row_index * numcols) + col Index] << bytewidth}
+end_row_major_address_calc:
+jr $ra
+### at this point, we have accounted for that shitty, annoying wraparound 
+### time to store the surroundings of the entity
+
+
+pull_address_pos1:
+stack_push 
+jal wraparound_colminus  ## arr[X-1][Y-1]
+jal wraparound_rowminus
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos1:
+jr $ra
+
+pull_address_pos2:
+stack_push 
+wraparound_colconst ## arr[X-1][Y]
+jal wraparound_rowminus
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos2:
+jr $ra
+
+pull_address_pos3:
+stack_push 
+jal wraparound_colplus  ## arr[X-1][Y+1]
+jal wraparound_rowminus
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos3:
+jr $ra
+
+pull_address_pos4:
+stack_push 
+jal wraparound_colminus  ## arr[X][Y-1]
+wraparound_rowconst
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos4:
+jr $ra
+
+pull_address_pos5:
+stack_push 
+wraparound_colconst  ## arr[X][Y]
+wraparound_rowconst
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos5:
+jr $ra
+
+pull_address_pos6:
+stack_push 
+jal wraparound_colplus  ## arr[X][Y+1]
+wraparound_rowconst
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos6:
+jr $ra
+
+pull_address_pos7:
+stack_push 
+jal wraparound_colminus ## arr[X+1][Y-1]
+jal wraparound_rowplus
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos7:
+jr $ra
+
+pull_address_pos8:
+stack_push 
+wraparound_colconst  # arr[X+1][Y]
+jal wraparound_rowplus  
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos8:
+jr $ra
+
+pull_address_pos9:
+stack_push 
+jal wraparound_colplus  # arr[X+1][Y+1]
+jal wraparound_rowplus
+jal row_major_address_calc # the address we want is stored in $t5
+stack_pop
+exit_pull_address_pos9:
+jr $ra
+
+load_wrapped_addresses:
+s7wrappedAddresses # set $s7 to wrapped address microstack
+addi $s5, $s5, 32
+add $t7, $s7, $0 # write $s7 into $t7, wiper across the microstack
+stack_push
+jal pull_address_pos1
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos2
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos3
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos4
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos5
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos6
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos7
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos8
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+jal pull_address_pos9
+sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
+addi $t7, $t7, 4 # move up 1 pos in the microstack
+stack_pop # done populating the microstack
+end_load_wrapped_addresses: ## after these functions have ran their course, $t4-7 are free
+jr $ra
+
+### surrounding info stack formatted as follows -> address pos 1 [+4] value pos 1 ... address pos 9 [+4] value pos 9
+load_surroundings:
+s7wrappedAddresses #ensure s7 set to desired value
+addi $s5, $zero, 32 #ensure division control register is set to proper value
+stack_push
+jal load_wrapped_addresses # load wrapped addresses into their microstack
+stack_pop
+#$t4-7 are free
+addi $t4, $s7, 0 #$t4 will be a microstack wiper
+s7surroundingBuffer #ensure ptr control reg set to desired value
+addi $t5, $s7, 0 # $t5 will be the surroundingBuffer wiper
+
+li $t7, 0
+surroundings_fill_loop:
+beq $t7, 9, exit_surroundings_fill_loop # run this 9 times
+sw $t4, 0($t5)   # currently, $t4 holds address
+addi $t5, $t5, 4 # add one word to $t5
+lw $t6, 0($t4) # load value stored in $t4 address into $t6 
+sw $t6, 0($t5) # store value $t4 @ current address into the word above the address
+addi $t4, $t4, 4 # push forward microstack wiper by a dataword
+addi $t7, $t7, 1
+j surroundings_fill_loop
+exit_surroundings_fill_loop:
+### $t4-$t7 should free again after this point
+end_load_surroundings:
+jr $ra
+
+death_by_hunger:
+li $a1, 100
+li $v0, 42
+syscall
+blt  $a0, 70, end_death_by_hunger
+addi $t5,$zero, 0 # really, whatever reg is governing the position of the target value 
+end_death_by_hunger:
+jr $ra 
+
+rabbit_decision_tree:
+
+
+end_rabbit_decision_tree:
+
+
+
+lion_decision_tree:
+
+end_lion_decision_tree:
+
+
+
+
+
+
+
+ ################################################################################## TODO
 
 ##### play_round
 #### loop through each array element individually, left to right top to bottom. 
@@ -434,57 +671,6 @@ jr $ra
 ### if number is greater than cutoff point
 # SUB_RABBIT - subtract value of rabbit from tile
 #else, SUB_LION - subtract value of lion from tile.
-
-
-#################################### reference
-#
-#  row major formula : base + {(rowIndex * numCols) + colIndex } << data_byte_width
-#   1 2 3
-#   4 T 6
-#   7 8 9
-# to find values surrounding T
-#
-# 1: base + {( (X_Down_1) * numCols) + (colIndex_Down_1) } << data_byte_width
-# 2: base + {( (X_Down_1) * numCols) + colIndex } << data_byte_width
-# 3: base + {( (X_Down_1) * numCols) + (colIndex_Up_1) } << data_byte_width 
-# 4: base + {( rowIndex * numCols) + (colIndex_Down_1) } << data_byte_width
-#
-# T: base + {(rowIndex * numCols) + colIndex } << data_byte_width
-#
-# 6: base + {( rowIndex * numCols) + (colIndex_Up_1) } << data_byte_width
-# 7: base + {( (X_Up_1) * numCols) + (colIndex_Down_1) } << data_byte_width
-# 8: base + {( (X_Up_1) * numCols) + colIndex } << data_byte_width
-# 9: base + {( (X_Up_1) * numCols) + (colIndex_Up_1) } << data_byte_width
-#
-#
-###### THE PROBLEM: wraparound is difficult & gross, functions needed to ensure wraparound while seeking targer 
-#
-# intent: (row_index - 1 + square_size) % square_size
-# X_Down_1 : 
-# sub  row_index, row_index, 1
-# addi row_index, row_index, 32
-# MODULO_32_FUNCTION
-#
-# intent: (row_index + 1) % square_size
-# X_UP_1 :
-# addi row_index, row_index, 1
-# MODULO_32_FUNCTION
-#
-# intent: (col_index - 1 + square_size) % square_size
-# COL_IN_DOWN_1:
-# sub  col_index, col_index, 1
-# addi col_index, col_index, 32
-# MODULO_32_FUNCTION
-#
-# intent: (col_index + 1) % square_size
-# COL_IN_UP_1 :
-# addi col_index, col_index 1
-# MODULO_32_FUNCTION
-#
-####### MODULO_FUNCTION
-#
-#
-####################################
 
 
 ##### rabbit_decision_tree
