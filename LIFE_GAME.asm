@@ -1,113 +1,56 @@
 .data
-frameBuffer: .space 0x40000
-gameboard: .word 0:1024
+frameBuffer: .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows * 32 rows. 256 * 32 * 32 = 262144 byte or 0x40000 bytes
+gameboard: .word 0:1023 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
 
-.macro RST_FRAMEPTR
-la $a3, frameBuffer 
+.macro RST_FRAMEPTR ### this macro resets the value of $a3 to the frame pointer
+la $a3, frameBuffer ### this trick is useful in functions where $a3 is a parameter 
+.end_macro ### indexing the location in memory of a dataword w/ respect to its distance
+### from the initial frame buffer
+
+.macro RST_TICKER ### utilizing $t9 as a designated incrementer for painting onto the bitmap display
+li $t9, 0 ### this macro resets said incrementer to 0
 .end_macro
 
-.macro RST_TICKER
-li $t9, 0
-.end_macro
+.macro RST_TICKER_2 ### utilizing $t8 as a designated incrementer for
+li $t8, 0 ### painting onto the bitmap display. This macro resets
+.end_macro ### said incrementer to 0
 
-.macro RST_TICKER_2
-li $t8, 0
-.end_macro
-
-.macro stack_push
-addi $sp, $sp, -4
+.macro stack_push ### this macro makes pushing $ra to the stack 
+addi $sp, $sp, -4 ### less annoying to me
 sw $ra, 0($sp)
 .end_macro
 
-.macro stack_pop
-lw $ra, 0($sp)
+.macro stack_pop ### this macro makes popping $ra off 
+lw $ra, 0($sp)### the stack less annoying to me
 addi $sp, $sp, 4
 .end_macro
 
+.macro s7framePointer ### sets register $s7 to the frame pointer
+la $s7, frameBuffer
+.end_macro
+  ##### these two macros are good for register conservation.
+.macro s7gameboard ## sets register $s7 to the gameboard pointer
+la $s7 gameboard
+.end_macro
 
+####################### CONSOLE OUTPUT SHIT, PROBABLY DEPRECATED ################################
 lions_won: .asciiz "Rabbits have gone extinct, Lions win." 
 rabbits_won: .asciiz "Lions have gone extinct, Rabbits win."
 simulation_begin: .asciiz "Starting simulation\n"
-newline: .asciiz"\n"
-newline_2: .asciiz "\n\n"
-whitespace: .asciiz " "
-whitespace_8: .asciiz "        "
-lion_print: .asciiz "L"
-rabbit_print: .asciiz "R"
-food_print: .asciiz "F"
-stone_print: .asciiz "S"
-combat_print: .asciiz "X"
-
- .macro print_string
-  li $v0, 4
-  syscall
- .end_macro
- 
- .macro print_string_w8
-  li $v0, 4
-  syscall
-  la $a0 whitespace_8
-  syscall
- .end_macro
- 
- .macro print_newline
-  li $v0, 4
-  la $a0, newline 
-  syscall
- .end_macro
-
-.macro print_newline_2
-  li $v0, 4
-  la $a0, newline_2
-  syscall
- .end_macro
-
-.macro print_whitespace_8
-li $v0, 4
-la $a0, whitespace_8
-syscall
-.end_macro
-
 
 .text
 
-### initialize gameboard
 
 main:
  li $t0, 0 # loop incrementer
  li $t1, 0 # pos tracker 4 array
- la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space
- la $s6, frameBuffer
- la $s7, gameboard
-  game_init: # initialize the values in the gameboard
-   
-   bge $t0, 1024, init_done # while board is not filled
-
-   li $a1, 15 #limit for RNG, to be replaced w/ LFSR altho discuss w arnie.
-   li $v0, 42 # syscall for rng 
-   syscall 
-
-   move $t1, $a0 #store RNG value into a tempreg
-  
-   bgt $t1, 10, ctne_fr_norm #if equal to or below 10, normalize to 0,
-   # indicating an open space for the player. else, continue from norm.
-   addi $t1, $zero, 0 ## normalizes the value
-   j ctne_fr_norm
-   ctne_fr_norm:
-   sw $t1, 0($t2) # stores the RNG value into the address indicated by $t2
-   addi $t2, $t2, 4 # offsets $t2 for the next element, heap grows up
-   addi $t0, $t0, 1 # increments counter
-   j game_init ### jump to top until condition is met
-   
- init_done:
+ la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space 
+ jal game_init ### sets initial conditions into the gameboard array 
  
  la $a0, simulation_begin
  li $v0, 4
  syscall
-la $a3, frameBuffer
-li $t1, 0x1004fffc
-li $t0, 0
-
+ 
 jal paint_background
 
 #jal print_grid
@@ -117,109 +60,53 @@ jal paint_full_grid
  li $v0, 10 
  syscall
  
- 
- 
-########################################## 
- print_grid: ##prints grid... self explanatory
- li $t0, 0 ## column counter
- li $t1, 0 ## row counter
- la $t2, gameboard ## initial gameboard position
- la $s7, gameboard
+########################################################
+  game_init: # initialize the values in the gameboard
+   bge $t0, 1024, init_done # while board is not filled
+   li $a1, 15 #limit for RNG, to be replaced w/ LFSR altho discuss w arnie.
+   li $v0, 42 # syscall for rng 
+   syscall 
+   move $t1, $a0 #store RNG value into a tempreg
+   bgt $t1, 10, ctne_fr_norm #if equal to or below 10, normalize to 0,
+   # indicating an open space for the player. else, continue from norm.
+   addi $t1, $zero, 0 ## normalizes the value
+   j ctne_fr_norm
+   ctne_fr_norm:
+   sw $t1, 0($t2) # stores the RNG value into the address indicated by $t2
+   addi $t2, $t2, 4 # offsets $t2 for the next element, heap grows up
+   addi $t0, $t0, 1 # increments counter
+   j game_init ### jump to top until condition is met
+ init_done:
 
-  print_rows: ## printing every row
-   beq $t1, 32, exit_rows ## printed everything, jump to end sequence
-   li $t0, 0 ## reset col counter
-   print_newline_2 ## self explanatory
-
-  print_cols: ##printing columns in the row 
-   beq $t0, 32, exit_cols
-
-  print_unit:
-   lw $t3, 0($t2) ## load current board position
-  
-   combat: 
-    bne $t3, 27, lion
-    la $a0, combat_print
-      print_string_w8
-    j post_default
-   
-   lion:
-    bne $t3, 14, not_lion ## if lion, do lion things; else jump
-    la $a0, lion_print #load lion into print argument
-    
-     print_string_w8
-   j post_default
-   
-  not_lion:  ## if not lion, try rabbit
-    bne $t3, 13, not_rabbit 
-    la $a0, rabbit_print #load rabbit into print argument
-    
-     print_string_w8
-   j post_default
-   
-  not_rabbit: ## if not rabbit, try food
-   bne $t3, 12, not_food
-   la $a0, food_print #load food into print argument
-  
-     print_string_w8
-   j post_default
-   
-  not_food: ## if not food, try stone
-   bne $t3, 11, not_stone
-   la $a0, stone_print #load stone into print argument
-  
-     print_string_w8
-   j post_default
-   
-  not_stone: ## if not stone, default. (0) 
-   ##default condition
-   li $v0, 4 #setup print integer
-   la $a0, whitespace_8
-   syscall
-   j post_default
-   
-   post_default:
-   
-   addi $t0, $t0, 1 # increment column counter
-   addi $t2, $t2, 4 # shift position in array 
-  j print_cols #jump back to top of printing columns
- 
- exit_cols:
-addi $t1, $t1, 1
-j print_rows
-
-exit_rows:
-jr $ra
- 
-
- 
 ############SPRITE PAINT FUNCTIONS#########
 ###########################################
 ###########################################
 paint_background:
+RST_FRAMEPTR
 addi $a2, $zero, 0xffe6ba ## color: sand
-li $t1, 0x40000
-li $t0, 0
-start_paint:
-beq $t0, $t1, exit_paint #if reach end, branch to exit paint
-sw $a2, 0($a3) #store colore $t9 into the address of $a3
-addi $a3, $a3, 4 #add into $a3, $a3 + 4
-addi $t0, $t0, 4
-j start_paint #jump back to start
-exit_paint:
+li $t1, 0x40000 ### loading into $t1 the size of the framebuffer, consider this an xmax value
+s7framePointer #setting the value of s7 to the frame pointer
+add $t1, $t1, $s7 ### s7 holds the address of the frame pointer
+li $t0, 0 ### loading into $t0 0, $t0 will increment up to the xmax of the framebuffer
+start_paint_pixel:
+beq $a3, $t1, exit_paint_pixel
+sw $a2, 0($a3) #$a2 will generally store a color value BY THE TIME this function is called
+addi $a3, $a3, 4 #increment to the next address that we'll store a color into 
+j start_paint_pixel ### jump back to the top of the loop until conditions are met 
+exit_paint_pixel:
 jr $ra
 
 paint_L:
 RST_TICKER ## resets counter variable
-addi $a2, $zero, 0xff6e7f
+addi $a2, $zero, 0xff6e7f # writes color to $a3
 beq $a3, $t1, exit_paint_L ## until framePTR = maxFrame
 vertical_line_loop: 
 bgt $t9, 5, vertical_line_loop_end ### t2 used as increment CTR
-sw $a2, 0($a3)
-addi $a3, $a3, 4
-sw $a2, 0($a3)
+sw $a2, 0($a3) ### writes the color stored into $a2 to the location on the bitmap frame
+addi $a3, $a3, 4 # increments to the next position on the bitmap frame
+sw $a2, 0($a3) #writes color, again, for a width of now 2px
 addi $a3, $a3, 1020 ### skip row - 1 because of the length of the width of L stem
-sw $a2, 0($a3)
+sw $a2, 0($a3) #writes again 1 px 
 addi $t9, $t9, 1 ## incrementing small ticker
 j vertical_line_loop
 vertical_line_loop_end: ### stem drawn
@@ -227,15 +114,15 @@ li $t9, 0
 horizontal_line_loop:
 addi $t9, $t9, 1 ### incrementing ticker again, register-conservey but annoying
 horizontal_line_loop_row: ### draws the two long sides of the L
-beq $t9, 8, row_loop_end
-beq $t9, 18, horizontal_line_loop_end
-addi $a3, $a3, 4
-sw $a2, 0($a3)
-addi $t9, $t9, 1
+beq $t9, 8, row_loop_end # end condition ticker 
+beq $t9, 18, horizontal_line_loop_end # sub_end condition
+addi $a3, $a3, 4 # increment
+sw $a2, 0($a3) #write 
+addi $t9, $t9, 1 # increment interior ticker
 j horizontal_line_loop_row
 row_loop_end:
-addi $a3, $a3, 992
-addi $t9, $t9, 1
+addi $a3, $a3, 992 # jump row
+addi $t9, $t9, 1 #increment exterior ticker 
 j horizontal_line_loop
 horizontal_line_loop_end:
 exit_paint_L:
@@ -243,31 +130,33 @@ RST_TICKER
 jr $ra
 
 paint_X:
-addi $a3, $a3, 7168
-addi $a2, $zero, 0xff0000
-RST_TICKER
+addi $a3, $a3, 7168 #### jumps to bottom right corner of bmp 8px * 8px sprite region
+addi $a2, $zero, 0xff0000 ### write color 
+RST_TICKER # reset ticker
 forward_slash:
-beq $t9, 8, forward_slash_done
-sw $a2, 0($a3)
+beq $t9, 8, forward_slash_done ### end condition from bottom right to top left of X
+sw $a2, 0($a3) #write
 beq $t9, 3, skip_center_up_done
-addi $a3, $a3, 4
-sw $a2, 0($a3)
-skip_center_up_done:
-addi $a3, $a3, -1024
-addi $t9, $t9, 1
+addi $a3, $a3, 4 # increment
+sw $a2, 0($a3) #write
+skip_center_up_done: # skip upwards in diagonal fashion
+addi $a3, $a3, -1024 # skip up one row in BMP 
+addi $t9, $t9, 1 # increment a ticker of some fucking sort
 j forward_slash
 forward_slash_done:
 RST_TICKER
-addi $a3, $a3, 996
+addi $a3, $a3, 996 # jump ahead from neg incrementation,
+## corrective measure for an algorithmic deficiency that i do not care
+##  enough to correct at this time
 back_slash:
-beq $t9, 8, back_slash_done
-sw $a2, 0($a3)
-beq $t9, 3, skip_center_down_done
-addi $a3, $a3, 4
-sw $a2, 0($a3)
+beq $t9, 8, back_slash_done ## conditional branch
+sw $a2, 0($a3) ## writing color 
+beq $t9, 3, skip_center_down_done # conditional branch 
+addi $a3, $a3, 4 # increment to next position
+sw $a2, 0($a3) #write 
 skip_center_down_done:
-addi $a3, $a3, 1024
-addi $t9, $t9, 1
+addi $a3, $a3, 1024 #same as above.
+addi $t9, $t9, 1 
 j back_slash
 back_slash_done:
 exit_paint_X:
@@ -277,19 +166,19 @@ jr $ra
 paint_S:
 RST_TICKER
 RST_TICKER_2
-addi $a2, $zero, 0x919191
+addi $a2, $zero, 0x919191 # loads color into $a2
 paint_S_row_loop:
-beq $t8, 8, paint_S_row_loop_end
+beq $t8, 8, paint_S_row_loop_end # conditional branch
 RST_TICKER
 paint_S_column_loop:
-beq $t9, 8, paint_S_column_loop_end
-sw $a2, 0($a3)
-addi $a3, $a3, 4
-addi $t9, $t9, 1
+beq $t9, 8, paint_S_column_loop_end # conditional branch
+sw $a2, 0($a3) # writing color into frame position
+addi $a3, $a3, 4 # increment to next position on frame
+addi $t9, $t9, 1 ## increment ticker
 j paint_S_column_loop
 paint_S_column_loop_end:
-addi $a3, $a3, 992
-addi $t8, $t8, 1
+addi $a3, $a3, 992 # jump to next row - offset of 32 for byte width of square row
+addi $t8, $t8, 1 # increment ticker
 j paint_S_row_loop
 paint_S_row_loop_end:
 RST_TICKER
@@ -298,7 +187,7 @@ exit_paint_S:
 jr $ra
 
 paint_F:
-addi $a3, $a3, 2048 
+addi $a3, $a3, 2048 ## set initial position
 addi $a2, $zero, 0x57d5de
 RST_TICKER
 paint_F_flat_top:
@@ -330,7 +219,7 @@ addi $a3, $a3, 4 ### shunt forward 1 px to give rounded edge
 paint_F_flat_bottom: ### draw bottom row of pill
 beq $t9, 6, paint_F_flat_bottom_end
 addi $a3, $a3, 4
-lw $a2, 0($a3)
+sw $a2, 0($a3)
 addi $t9, $t9, 1
 j paint_F_flat_bottom
 paint_F_flat_bottom_end:
@@ -480,6 +369,7 @@ beq $t0, 32, exit_paint_per_array_col
 sll $a3, $t1, 5 
 add $a3, $a3, $t0
 sll $a3, $a3, 2
+s7gameboard
 add $a3, $a3 ,$s7
 
 lw $a2, 0($a3)
@@ -489,7 +379,8 @@ sll $t3, $t1, 8 ## scaled row value
 sll $t3, $t3, 3 ## rowIndex * scale * numCols)
 add $a3, $t3, $t2 ## ((rowIndex * scale * numCols) + col Index * scale)
 sll $a3, $a3, 2 ## ((rowIndex * scale * numCols) + col Index * scale) << data_byte_width
-add $a3, $a3, $s6
+s7framePointer
+add $a3, $a3, $s7
 stack_push 
 jal paint_unit
 stack_pop
