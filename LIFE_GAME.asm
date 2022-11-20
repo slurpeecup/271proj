@@ -3,6 +3,36 @@ frameBuffer: .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows
 gameboard: .word 0:1023 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
 surroundingBuffer: .space 0x48
 wrappedAddresses: .space 0x48
+rabbit_brain: .space 0x48
+registerStack1: .space 0x10
+
+.macro stash_t_registers1
+la $s7, registerStack1 # setting pointer control to register stack 1
+sw $t0, 0($s7)
+sw $t1, 4($s7)
+sw $t2, 8($s7)
+sw $t3, 12($s7)
+sw $t4, 16($s7)
+sw $t5, 20($s7)  ## storing all tempregs
+sw $t6, 24($s7)
+sw $t7, 28($s7)
+sw $t8, 32($s7)
+sw $t9, 36($s7)
+.end_macro
+
+.macro pull_t_registers1
+la $s7, registerStack1 # setting pointer control to register stack 1
+lw $t0, 0($s7)
+lw $t1, 4($s7)
+lw $t2, 8($s7)
+lw $t3, 12($s7)
+lw $t4, 16($s7)
+lw $t5, 20($s7)  ## storing all tempregs
+lw $t6, 24($s7)
+lw $t7, 28($s7)
+lw $t8, 32($s7)
+lw $t9, 36($s7)
+.end_macro
 
 .macro RST_FRAMEPTR ### this macro resets the value of $a3 to the frame pointer
 la $a3, frameBuffer ### this trick is useful in functions where $a3 is a parameter 
@@ -41,6 +71,10 @@ la $s7, wrappedAddresses
 
 .macro s7surroundingBuffer
 la $s7, wrappedAddresses
+.end_macro
+
+.macro s7registerStack1
+la $s7, registerStack1
 .end_macro
 
 .macro wraparound_rowconst
@@ -622,32 +656,166 @@ exit_surroundings_fill_loop:
 end_load_surroundings:
 jr $ra
 
+########### now, let's consider the structure of our player behavior tree
+
 death_by_hunger:
-li $a1, 100
+li $a1, 100  #random int from 0-99
 li $v0, 42
 syscall
 blt  $a0, 70, end_death_by_hunger
-addi $t5,$zero, 0 # really, whatever reg is governing the position of the target value 
+s7wrappedAddresses #accessing the address of the player efficiently
+sw $zero, 16($s7)  # writing the value of 0 into 
 end_death_by_hunger:
 jr $ra 
 
+### a preliminary note on rabbit_brain
+###rabbit_brain is a microstack
+#0xn(+0) = empty flag set increment 1, 2 -> when 2, jump to empty loc 1
+#0xn(+4) = empty location - current empty location, overwritten each time
+#0xn(+8) = lion flag - sets flag for lion, avoid
+#0xn(+12) = lion location - writes lion location
+
+
 rabbit_decision_tree:
+s7surroundingBuffer # analyzing the surroundings
+# assuming $t4-$t7 are free
+stash_t_registers1 # $t registers now cool to overwrite 
+li $t9, 44
+add $s7, $s7, $t9 #position v6 is offset 4bytes * 5 * 2 words [loc] + 4 bytes (value) from surBuffer
+lw $t4, 0($s7) # adding directly to control pointer such that the offset on the buffer is closer to parametric
+la $s5, rabbit_brain # load the address of the rabbit brain
+top_of_treeR:
+
+###############################################################################
+bne $t4, 14, exit_lion_decisionR #not a lion
+
+s7surroundingBuffer ## redundance is the virtue of those with memory
+
+### $t5 is brain pos control, #t3 flag control. 
+
+lw $t3, 8($s5) # loading lion_flag from rabbit_brain # this can be a fixed value, static position.
+
+beq $t5, 1, lion_flag_onR # if lion flag is on, ugh damn gotta program
+addi $t4, $zero, 1 # set lion flag
+addi $t3, $t3, -4 #move pointer to lion location
+sw $t3, 12($s5) ## storing into location the offset to rabbit brain
+j lion_flag_offR
+                                                                 ### rabbit->lion logic
+lion_flag_onR:
+s7surroundingBuffer
+li $t9, 32  ### player location is offset by 32 from label
+add $s7, $s7, $t9
+lw $t3, 0($s7) # loading player current location into $t3
+sw $zero, 0($t3) # clearing the value in player current location
+lw $t3, 12($s5) # assuming the lion flag is on, load location of lion
+li $t2, 27 # can obliterate $t2 after this
+sw $t2, 0($t3) # store COMBAT value into the location of lion
+## pass #t3 into the combat function.
+stack_push
+jal animal_combat
+stack_pop
+### redraw 9x9
+j end_rabbit_decision_tree
+lion_flag_offR:
+#################################################################################
+exit_lion_decisionR:
+
+bne $t4, 13, exit_rabbit_decision #rabbit
+#given: $t4 contains the fact that we are looking @ a rabbit 
+stack_push
+jal count_all_rabbits
+bgt $s4, 25, rabbit_moves_away #if rabbits more than 25
+jal find_random_empty_gameboard
+sw $t4, 0($s4) # write rabbit into random loc
+### redraw 9x9 @ randomloc_______________________________________________________ remember this.
+rabbit_moves_away:
+jal force_empty_position
+sw $t4, 0($s7) #store rabbit into the known empty slot
+s7surroundingBuffer   #### ready to purge rabbit from its current location in memory
+sw $zero, 32($s7) ### player location is offset by 32 from label
+### redraw 9x9 from here. 
+stack_pop
+exit_rabbit_decision:
+bne $t4, 12, exit_food_decisionR #food
 
 
+exit_food_decisionR:
+bne $t4, 11, exit_stone_decisionR #stone
+
+stone_decisionR:
+
+exit_stone_decisionR:
+
+
+empty_space_decisionR:
+
+exit_space_decisionR:
+
+decision_madeR:
 end_rabbit_decision_tree:
-
-
 
 lion_decision_tree:
 
 end_lion_decision_tree:
 
+pull_t_registers1
+
+animal_combat:
+#use reg t2 cus fuck it
+li $v0, 42
+li $a1, 100
+syscall
+bgt $a0, 70, bias_against_rabbit # lion is most likely to win the fight
+li $t2, 14    # lion won the fight.
+j writing_combat_results
+bias_against_rabbit:
+li $t2, 13    # rabbit won the fight.
+writing_combat_results:
+sw $t2, 0($t3) #load winner value into the space.
+end_animal_combat:
+jr $ra
+
+count_all_rabbits:
+s7gameboard
+addi $t7, $s7, 4096 #xmax
+counting_rabbits:
+beq $s7, $t7, end_rabbit_count # if xmax, end
+lw $t6, 0($s7) # load val @ t7
+bne $t6, 13, no_rabbit # do not increment $s4 if rabbit
+addi $s4, $s4, 1 ## s4 rabbit count
+no_rabbit:
+addi $s7, $s7, 4 # push wiper forward
+j counting_rabbits
+end_rabbit_count:
+jr $ra
 
 
+find_random_empty_gameboard:
+s7gameboard
+li $v0, 42  #loading params for RNG
+li $a1, 1024
+probe_for_empty:
+syscall
+add $t8, $zero, $a0 ### set value to rng
+sll $t8, $t8, 2 ### multiply by 4 to account for bytewidth
+add $t8, $t8, $s7 ### add label
+add $s4, $0, $t8 ## i know this is a misuse of the persistent label, but idgaf
+lw $t8, 0($t8) ### probe position
+bne $t8, 0, probe_for_empty # if not empty, go again.
+exit_find_random_empty_gameboard:
+jr $ra
 
 
-
-
+force_empty_position:
+s7surroundingBuffer
+probe_for_empty_force:
+addi $s7, $s7, 8 # increment to next position
+lw $t8, 0($s7) #load position
+beq $t8, 12, empty_found_force #if not food
+bne $t8, $0, probe_for_empty_force #and not empty, try again.
+empty_found_force:
+addi $s7, $s7, -8 #correct for overshoot
+jr $ra
  ################################################################################## TODO
 
 ##### play_round
@@ -659,18 +827,6 @@ end_lion_decision_tree:
 ##### decision
 #### if value in tile is correspondent to a rabbit, jump to rabbit decision tree
 #### if value in tile is correspondent to a lion, jump to lion decision tree 
-
-##### death_by_hunger
-#### call system time
-#### if system time is divisible by 6
-#### set value in tile to 0, then return 
-
-##### animal_combat
-#### if value on tile is indicative of animals fighting
-### load a random number within a range
-### if number is greater than cutoff point
-# SUB_RABBIT - subtract value of rabbit from tile
-#else, SUB_LION - subtract value of lion from tile.
 
 
 ##### rabbit_decision_tree
