@@ -687,7 +687,7 @@ la $s5, rabbit_brain # load the address of the rabbit brain
 top_of_treeR:
 
 ###############################################################################
-bne $t4, 14, exit_lion_decisionR #not a lion
+bne $t4, 14, exit_lion_decisionR #not a lion   
 
 s7surroundingBuffer ## redundance is the virtue of those with memory
 
@@ -713,9 +713,9 @@ sw $t2, 0($t3) # store COMBAT value into the location of lion
 ## pass #t3 into the combat function.
 stack_push
 jal animal_combat
+jal draw_9x9
 stack_pop
-### redraw 9x9
-j end_rabbit_decision_tree
+j decision_madeR
 lion_flag_offR:
 #################################################################################
 exit_lion_decisionR:
@@ -727,31 +727,46 @@ jal count_all_rabbits
 bgt $s4, 25, rabbit_moves_away #if rabbits more than 25
 jal find_random_empty_gameboard
 sw $t4, 0($s4) # write rabbit into random loc
-### redraw 9x9 @ randomloc_______________________________________________________ remember this.
+jal draw_by_address
 rabbit_moves_away:
 jal force_empty_position
 sw $t4, 0($s7) #store rabbit into the known empty slot
 s7surroundingBuffer   #### ready to purge rabbit from its current location in memory
 sw $zero, 32($s7) ### player location is offset by 32 from label
-### redraw 9x9 from here. 
+jal draw_9x9
 stack_pop
+j decision_madeR
 exit_rabbit_decision:
+
 bne $t4, 12, exit_food_decisionR #food
 
 
 exit_food_decisionR:
 bne $t4, 11, exit_stone_decisionR #stone
+addi $t3, $t3, -4 #### moving from value of food to location of the food
+li $t4, 13 ## prep to write rabbit
+sw $t4, 0($t3) ## writing rabbit into new location
+s7wrappedAddresses # shifting ptr to s7, need to un-write rabbit from curPos
+
+li $t4, 16($s7) # offset by 5, address of player
+sw $0, 0($t4) # unwriting rabbit from the player position
+jal draw_9x9
+j decision_madeR
 
 stone_decisionR:
+### just jump back to the top of the loop
 
 exit_stone_decisionR:
 
 
 empty_space_decisionR:
-
+##### FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
 exit_space_decisionR:
 
 decision_madeR:
+
+
+
 end_rabbit_decision_tree:
 
 lion_decision_tree:
@@ -790,6 +805,20 @@ end_rabbit_count:
 jr $ra
 
 
+count_all_lions:
+s7gameboard
+addi $t7, $s7, 4096 #xmax
+counting_lions:
+beq $s7, $t7, end_lion_count # if xmax, end
+lw $t6, 0($s7) # load val @ t7
+bne $t6, 13, no_rabbit # do not increment $s4 if rabbit
+addi $s4, $s4, 1 ## s4 rabbit count
+no_lion:
+addi $s7, $s7, 4 # push wiper forward
+j counting_lions
+end_lion_count:
+jr $ra
+
 find_random_empty_gameboard:
 s7gameboard
 li $v0, 42  #loading params for RNG
@@ -815,6 +844,51 @@ beq $t8, 12, empty_found_force #if not food
 bne $t8, $0, probe_for_empty_force #and not empty, try again.
 empty_found_force:
 addi $s7, $s7, -8 #correct for overshoot
+jr $ra
+
+
+#passing in s4 as an address
+draw_by_address:
+la $t4, gameboard ### setting $t4 to address
+sub $t4, $s4, $t4 # $t4 now equals distance WRT to label
+addi $t5, $0, 256
+div $t4, $t5 # how many rows + bytewidth
+mflo $t4 #t4 is quotient (row index)
+mfhi $t5 #t5 is remainder (col index)
+
+### now ready for row major
+sll $t5, $t5, 3 # shifting col index
+sll $t4, $t4, 11 ## rowindex * scale * numcols
+
+add $t5, $t5, $t4 ## ((rowIndex * scale * numCols) + col Index * scale)
+sll $t5, $t5, 2 # mul by data byte width
+s7framePointer
+add $t5, $t5, $s7 # set address to framePointer
+lw $a2, 0($s4) # load into argument for paint unit the value of the entity @ the poked addr
+stack_push
+jal paint_unit
+stack_pop
+end_draw_by_address:
+jr $ra
+
+draw9x9:
+s7wrappedAddresses
+add $t6, $0, $s7 #t6 is the base ptr for wrapped addresses here
+stack_push
+add $t6, $0, $0 # t6 wiper
+############
+addi $t9, $0, 0 # resetting t9 to be ticker
+
+looping_9x9:
+beq $9, 9, done_with_9x9_draw
+lw $s4, 0($t6)
+jal draw_by_address
+addi $t6, $t6, 4 
+addi $t9, $t9, 1
+j looping_9x9
+done_with_9x9_draw:
+stack_pop
+end_draw9x9:
 jr $ra
  ################################################################################## TODO
 
