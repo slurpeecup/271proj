@@ -5,6 +5,7 @@ surroundingBuffer: .space 0x48
 wrappedAddresses: .space 0x48
 rabbit_brain: .space 0x48
 registerStack1: .space 0x10
+index_within_decision_tree_loop: .space 0x4        #less effort than restructuring
 
 .macro stash_t_registers1
 la $s7, registerStack1 # setting pointer control to register stack 1
@@ -108,6 +109,8 @@ jal paint_background
 jal paint_full_grid
 
 ########################
+
+jal rabbit_decision_tree
  
  li $v0, 10 
  syscall
@@ -628,7 +631,6 @@ addi $t7, $t7, 4 # move up 1 pos in the microstack
 stack_pop # done populating the microstack
 end_load_wrapped_addresses: ## after these functions have ran their course, $t4-7 are free
 jr $ra
-
 ### surrounding info stack formatted as follows -> address pos 1 [+4] value pos 1 ... address pos 9 [+4] value pos 9
 load_surroundings:
 s7wrappedAddresses #ensure s7 set to desired value
@@ -640,7 +642,6 @@ stack_pop
 addi $t4, $s7, 0 #$t4 will be a microstack wiper
 s7surroundingBuffer #ensure ptr control reg set to desired value
 addi $t5, $s7, 0 # $t5 will be the surroundingBuffer wiper
-
 li $t7, 0
 surroundings_fill_loop:
 beq $t7, 9, exit_surroundings_fill_loop # run this 9 times
@@ -680,27 +681,29 @@ rabbit_decision_tree:
 s7surroundingBuffer # analyzing the surroundings
 # assuming $t4-$t7 are free
 stash_t_registers1 # $t registers now cool to overwrite 
-li $t9, 44
+li $t9, 44  ### initial offset to l6
+position_in_surBufferR:
+la $s6, index_within_decision_tree_loop
+sw $t9, 0($s6)
+beq $t9, 72, rst_t9R #l9 at a 64 offset PLUS 8 from bottom
 add $s7, $s7, $t9 #position v6 is offset 4bytes * 5 * 2 words [loc] + 4 bytes (value) from surBuffer
 lw $t4, 0($s7) # adding directly to control pointer such that the offset on the buffer is closer to parametric
 la $s5, rabbit_brain # load the address of the rabbit brain
+j top_of_treeR
+rst_t9R:
+li $t9, 0 # resetting $t9
+j position_in_surBufferR
 top_of_treeR:
-
 ###############################################################################
 bne $t4, 14, exit_lion_decisionR #not a lion   
-
 s7surroundingBuffer ## redundance is the virtue of those with memory
-
 ### $t5 is brain pos control, #t3 flag control. 
-
 lw $t3, 8($s5) # loading lion_flag from rabbit_brain # this can be a fixed value, static position.
-
 beq $t5, 1, lion_flag_onR # if lion flag is on, ugh damn gotta program
 addi $t4, $zero, 1 # set lion flag
 addi $t3, $t3, -4 #move pointer to lion location
 sw $t3, 12($s5) ## storing into location the offset to rabbit brain
-j lion_flag_offR
-                                                                 ### rabbit->lion logic
+j lion_flag_offR                                                           ### rabbit->lion logic
 lion_flag_onR:
 s7surroundingBuffer
 li $t9, 32  ### player location is offset by 32 from label
@@ -713,13 +716,12 @@ sw $t2, 0($t3) # store COMBAT value into the location of lion
 ## pass #t3 into the combat function.
 stack_push
 jal animal_combat
-jal draw_9x9
+jal draw9x9
 stack_pop
 j decision_madeR
 lion_flag_offR:
 #################################################################################
 exit_lion_decisionR:
-
 bne $t4, 13, exit_rabbit_decision #rabbit
 #given: $t4 contains the fact that we are looking @ a rabbit 
 stack_push
@@ -733,47 +735,44 @@ jal force_empty_position
 sw $t4, 0($s7) #store rabbit into the known empty slot
 s7surroundingBuffer   #### ready to purge rabbit from its current location in memory
 sw $zero, 32($s7) ### player location is offset by 32 from label
-jal draw_9x9
+jal draw9x9
 stack_pop
 j decision_madeR
 exit_rabbit_decision:
-
 bne $t4, 12, exit_food_decisionR #food
-
-
 exit_food_decisionR:
 bne $t4, 11, exit_stone_decisionR #stone
 addi $t3, $t3, -4 #### moving from value of food to location of the food
 li $t4, 13 ## prep to write rabbit
 sw $t4, 0($t3) ## writing rabbit into new location
 s7wrappedAddresses # shifting ptr to s7, need to un-write rabbit from curPos
-
-li $t4, 16($s7) # offset by 5, address of player
+lw $t4, 16($s7) # offset by 5, address of player
 sw $0, 0($t4) # unwriting rabbit from the player position
-jal draw_9x9
+jal draw9x9
 j decision_madeR
-
 stone_decisionR:
-### just jump back to the top of the loop
-
+j exit_space_decisionR
 exit_stone_decisionR:
-
-
 empty_space_decisionR:
-##### FUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
+addi $t3, $t3, -4 #### moving from value of food to location of the empty
+li $t4, 13 ## prep to write rabbit
+sw $t4, 0($t3) ## writing rabbit into new location
+s7wrappedAddresses # shifting ptr to s7, need to un-write rabbit from curPos
+lw $t4, 16($s7) # offset by 5, address of player
+sw $0, 0($t4) # unwriting rabbit from the player position
+jal draw9x9
 exit_space_decisionR:
-
+lw $t9, 0($s6)
+addi $t9, $t9, 8
+j position_in_surBufferR
 decision_madeR:
-
-
-
 end_rabbit_decision_tree:
+pull_t_registers1 # reset T registers to their former behavior
+jr $ra
 
 lion_decision_tree:
-
 end_lion_decision_tree:
 
-pull_t_registers1
 
 animal_combat:
 #use reg t2 cus fuck it
@@ -890,6 +889,8 @@ done_with_9x9_draw:
 stack_pop
 end_draw9x9:
 jr $ra
+
+
  ################################################################################## TODO
 
 ##### play_round
