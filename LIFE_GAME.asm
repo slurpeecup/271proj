@@ -109,9 +109,19 @@ jal paint_background
 jal paint_full_grid
 
 ########################
+top_of_main_loop:
+s7gameboard
+li $t0, 0 
+li $t1, 0
+stack_push
+### assuming $t0 is colindex and $t1 is rowindex.
 
-jal rabbit_decision_tree
- 
+
+
+stack_pop
+# bne $s3, 0, top_of_main_loop # are lions == 0?
+bne $s4, 0, top_of_main_loop # are rabbits == 0?
+  
  li $v0, 10 
  syscall
  
@@ -403,8 +413,7 @@ jal erase_char
 stack_pop
 paint_unit_complete:
 jr $ra
-###########################################
-###########################################
+################################
 paint_full_grid:
 li $a2, 0
 li $a3, 0
@@ -889,7 +898,6 @@ done_with_9x9_draw:
 stack_pop
 end_draw9x9:
 jr $ra
-
 
  ################################################################################## TODO
 
