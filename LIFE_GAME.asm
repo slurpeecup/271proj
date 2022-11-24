@@ -98,7 +98,8 @@ main:
 ######## s3, s4 reserved for end game conditions.
  li $t0, 0 # loop incrementer
  li $t1, 0 # pos tracker 4 array
- la $t2, gameboard  #load initial address of gameboard label, which already has pre-allocated space 
+ la $s0, gameboard  #load initial address of gameboard label into a persistent point
+ la $t2, gameboard
  jal game_init ### sets initial conditions into the gameboard array 
  
  la $a0, simulation_begin
@@ -109,18 +110,20 @@ jal paint_background
 jal paint_full_grid
 
 ########################
-top_of_main_loop:
+endgame_condition_not_met_reset:
 s7gameboard
 li $t0, 0 
 li $t1, 0
 stack_push
 ### assuming $t0 is colindex and $t1 is rowindex.
-
-
-
+jal play_a_unit
 stack_pop
-# bne $s3, 0, top_of_main_loop # are lions == 0?
-bne $s4, 0, top_of_main_loop # are rabbits == 0?
+
+
+jal count_all_rabbits
+
+bne $s3, 0, endgame_condition_not_met_reset # are lions == 0?
+bne $s4, 0, endgame_condition_not_met_reset # are rabbits == 0?
   
  li $v0, 10 
  syscall
@@ -692,9 +695,9 @@ s7surroundingBuffer # analyzing the surroundings
 stash_t_registers1 # $t registers now cool to overwrite 
 li $t9, 44  ### initial offset to l6
 position_in_surBufferR:
-la $s6, index_within_decision_tree_loop
-sw $t9, 0($s6)
-beq $t9, 72, rst_t9R #l9 at a 64 offset PLUS 8 from bottom
+la $s6, index_within_decision_tree_loop  ### a funky trick to combat poor register management, store & load one value
+sw $t9, 0($s6)                           ### pertaining to the index along the surrounding address buffer
+beq $t9, 72, rst_t9R #$t9 at a 64 offset PLUS 8 from bottom
 add $s7, $s7, $t9 #position v6 is offset 4bytes * 5 * 2 words [loc] + 4 bytes (value) from surBuffer
 lw $t4, 0($s7) # adding directly to control pointer such that the offset on the buffer is closer to parametric
 la $s5, rabbit_brain # load the address of the rabbit brain
@@ -704,15 +707,22 @@ li $t9, 0 # resetting $t9
 j position_in_surBufferR
 top_of_treeR:
 ###############################################################################
-bne $t4, 14, exit_lion_decisionR #not a lion   
+bne $t3, 14, exit_lion_decisionR #not a lion   
 s7surroundingBuffer ## redundance is the virtue of those with memory
 ### $t5 is brain pos control, #t3 flag control. 
-lw $t3, 8($s5) # loading lion_flag from rabbit_brain # this can be a fixed value, static position.
+lw $t9, 8($s5) # loading lion_flag from rabbit_brain # this can be a fixed value, static position.
 beq $t5, 1, lion_flag_onR # if lion flag is on, ugh damn gotta program
 addi $t4, $zero, 1 # set lion flag
+
+
+
 addi $t3, $t3, -4 #move pointer to lion location
 sw $t3, 12($s5) ## storing into location the offset to rabbit brain
-j lion_flag_offR                                                           ### rabbit->lion logic
+j lion_flag_offR   
+
+                                                        
+                                                                                                                
+                                                                                                                                                                                                                                ### rabbit->lion logic
 lion_flag_onR:
 s7surroundingBuffer
 li $t9, 32  ### player location is offset by 32 from label
@@ -739,6 +749,7 @@ bgt $s4, 25, rabbit_moves_away #if rabbits more than 25
 jal find_random_empty_gameboard
 sw $t4, 0($s4) # write rabbit into random loc
 jal draw_by_address
+
 rabbit_moves_away:
 jal force_empty_position
 sw $t4, 0($s7) #store rabbit into the known empty slot
@@ -748,7 +759,9 @@ jal draw9x9
 stack_pop
 j decision_madeR
 exit_rabbit_decision:
+
 bne $t4, 12, exit_food_decisionR #food
+
 exit_food_decisionR:
 bne $t4, 11, exit_stone_decisionR #stone
 addi $t3, $t3, -4 #### moving from value of food to location of the food
@@ -899,6 +912,51 @@ stack_pop
 end_draw9x9:
 jr $ra
 
+#li $t0, 0
+#li $t1, 0 
+
+play_a_unit:
+
+gameplay_unit:
+
+unit_loop_row:
+stack_push
+beq $t1, 32, exit_unit_loop_row # row index incrementer maxsize
+li $t0, 0 
+unit_loop_column:
+beq $t0, 32, exit_unit_loop_column # column index incrementer maxsize
+## ((rowIndex * scale * numCols) + col Index * scale)
+add $t2, $0, $t1 # rowIndex in $t2
+mul $t2, $t2, 32 # #rowIndex * numcols
+add $t2, $t0, $t2 # rowIndex * ncols  + colIndex
+sll $t2, $t2, 2  # rowIndex * ncols  + colIndex ) << bytewidth
+add $t2, $t2, $s0 # #rowIndex * ncols + colIndex << bytewidth
+lw $t2, 0($t2) # load into $t2 the value @ t2
+
+beq $t2, 13, rabbit_in_unit_func
+beq $t2, 14, lion_in_unit_func
+bne $t2, 14, skip_in_unit_func
+
+in_unit_function_next:
+addi $t0, $t0, 1
+j unit_loop_column
+
+rabbit_in_unit_func:
+jal rabbit_decision_tree
+j in_unit_function_next
+lion_in_unit_func:
+#jump to lion, but not rn lollll
+skip_in_unit_func:
+j in_unit_function_next
+
+exit_unit_loop_column:
+addi $t1, $t1, 1
+j unit_loop_row
+exit_unit_loop_row:
+
+stack_pop
+exit_the_unit:
+jr $ra
  ################################################################################## TODO
 
 ##### play_round
