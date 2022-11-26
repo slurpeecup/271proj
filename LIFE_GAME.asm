@@ -1,10 +1,10 @@
 .data
         frameBuffer : .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows * 32 rows. 256 * 32 * 32 = 262144 byte or 0x40000 bytes
         gameboard : .word 0 : 1023 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
-        surroundingBuffer : .space 0x48
-        wrappedAddresses : .space 0x48
-        rabbit_brain : .space 0x48
-        registerStack1 : .space 0x10
+        surroundingBuffer : .space 0x50
+        wrappedAddresses : .space 0x50
+        rabbit_brain : .space 0x50
+        registerStack1 : .space 0x50
         index_within_decision_tree_loop : .space 0x4        #less effort than restructuring
  
   .macro stash_t_registers1
@@ -106,7 +106,6 @@
       li $v0, 4
       syscall
 
-    jal paint_background
     jal paint_full_grid
 
 
@@ -649,7 +648,7 @@
       jal load_wrapped_addresses # load wrapped addresses into their microstack
     stack_pop
         #$t4 - 7 are free
-        addi $t4, $s7, 0 #$t4 will be a microstack wiper
+        addi $t4, $s7, 0 #$t4 will wipe across wrappedAddresses
         s7surroundingBuffer #ensure ptr control reg set to desired value
         addi $t5, $s7, 0 # $t5 will be the surroundingBuffer wiper
         li $t7, 0
@@ -657,7 +656,7 @@
       beq $t7, 9, exit_surroundings_fill_loop # run this 9 times
         sw $t4, 0($t5)   # currently, $t4 holds address
         addi $t5, $t5, 4 # add one word to $t5
-        lw $t6, 0($t4) # load value stored in $t4 address into $t6
+        lw $t6, 0($t4) # load value stored at offset from wrappedAddresses address into $t6
         sw $t6, 0($t5) # store value $t4 @ current address into the word above the address
         addi $t4, $t4, 4 # push forward microstack wiper by a dataword
         addi $t7, $t7, 1
@@ -688,23 +687,26 @@
 
 
   rabbit_decision_tree :
-   s7surroundingBuffer # analyzing the surroundings
-          # assuming $t4 - $t7 are free
+  ### allowing T registers to be overwritten and currently held values recalled upon returning to the main game array loop
    stash_t_registers1 # $t registers now cool to overwrite
           li $t9, 44  ### initial offset to l6
   position_in_surBufferR :
+   s7surroundingBuffer
           la $s6, index_within_decision_tree_loop  ### a funky trick to combat poor register management, store& load one value
-          sw $t9, 0($s6)                           ### pertaining to the index along the surrounding address buffer
-      beq $t9, 72, rst_t9R #$t9 at a 64 offset PLUS 8 from bottom
+          sw $t9, 0($s6)                           ### pertaining to the index along the surrounding address buffer so that $t9
+                                                   ### can be overwritten later
+  
+          beq $t9, 68, rst_t9R #$t9 at a 64 offset PLUS 8 from bottom
           add $s7, $s7, $t9 #position v6 is offset 4bytes * 5 * 2 words[loc] + 4 bytes(value) from surBuffer
+         
           lw $t4, 0($s7) # adding directly to control pointer such that the offset on the buffer is closer to parametric
           la $s5, rabbit_brain # load the address of the rabbit brain
       j top_of_treeR
   rst_t9R :
-          li $t9, 0 # resetting $t9
+          li $t9, 4 # resetting $t9 to FOUR, since we are looking at VALUES and decrementing from value to location
       j position_in_surBufferR
   top_of_treeR :
-
+  lw $t3, 0($s7)
   ###############################################################################
   bne $t3, 14, exit_lion_decisionR #not a lion
   ###############################################################################
@@ -763,7 +765,7 @@
   ###############################################################################
 
   food_decision_R:
-     bne $t4, 11, exit_stone_decisionR #stone
+     bne $t4, 11, stone_decisionR #stone
          addi $t9, $t9, -4 #### moving from value of food to location of the food
          li $t4, 13 ## prep to write rabbit
          sw $t4, 0($t3) ## writing rabbit into new location
@@ -776,16 +778,19 @@
   ###############################################################################
 
   stone_decisionR:
+  beq $t4, 0, empty_space_decisionR
   j exit_space_decisionR
   exit_stone_decisionR :
   
   empty_space_decisionR:
+   s7surroundingBuffer
       addi $t9, $t9, -4 #### moving from value of food to location of the empty
       li $t4, 13 ## prep to write rabbit
+      add $t9, $t9, $s7
       sw $t4, 0($t9) ## writing rabbit into new location
     s7wrappedAddresses # shifting ptr to s7, need to un - write rabbit from curPos
-      lw $t4, 16($s7) # offset by 5, address of player
-      sw $0, 0($t4) # unwriting rabbit from the player position
+      sw $0, 16($s7) # offset by 5, address of player
+                     # unwriting rabbit from the player position
     jal draw9x9
   exit_space_decisionR :
       lw $t9, 0($s6)
@@ -795,6 +800,11 @@
   end_rabbit_decision_tree:
       pull_t_registers1 # reset T registers to their former behavior
     jr $ra
+    
+    
+    
+    
+    
   lion_decision_tree:
   end_lion_decision_tree:
 
@@ -888,7 +898,7 @@
        sll $t5, $t5, 2 # mul by data byte width
     s7framePointer
        add $t5, $t5, $s7 # set address to framePointer
-       lw $a2, 0($s4) # load into argument for paint unit the value of the entity @ the poked addr
+       add $a2, $0,$s4 # load into argument for paint_unit the value of the entity @ the poked addr
    stack_push
      jal paint_unit
    stack_pop
@@ -899,7 +909,6 @@
     s7wrappedAddresses
        add $t6, $0, $s7 #t6 is the base ptr for wrapped addresses here
     stack_push
-       add $t6, $0, $0 # t6 wiper
        ############
        addi $t9, $0, 0 # resetting t9 to be ticker
 
