@@ -1,6 +1,6 @@
 .data
         frameBuffer : .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows * 32 rows. 256 * 32 * 32 = 262144 byte or 0x40000 bytes
-        gameboard : .word 0 : 1023 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
+        gameboard : .word 0 : 1024 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
         surroundingBuffer : .space 0x50
         wrappedAddresses : .space 0x50
         rabbit_brain : .space 0x50
@@ -71,7 +71,7 @@
   .end_macro
  
   .macro s7surroundingBuffer
-        la $s7, wrappedAddresses
+        la $s7, surroundingBuffer
   .end_macro
  
   .macro s7registerStack1
@@ -83,7 +83,7 @@
   .end_macro       ## but a necessary abstraction for the sake of consistency
  
   .macro wraparound_colconst
-        addi $t4, $t1, 0 ## this was honestly just too trivial to turn into a function,
+        addi $t4, $t0, 0 ## this was honestly just too trivial to turn into a function,
   .end_macro       ## but a necessary abstraction for the sake of consistency
 
             ####################### CONSOLE OUTPUT SHIT, PROBABLY DEPRECATED ################################
@@ -114,7 +114,7 @@
         li $t0, 0
         li $t1, 0
           stack_push
-              jal play_a_unit ### assuming $t0 is colindex and $t1 is rowindex.
+              jal play_a_round ### assuming $t0 is colindex and $t1 is rowindex.
           stack_pop
 
 
@@ -365,6 +365,7 @@
   ###########################################
   ###########################################
   paint_unit:
+  s7framePointer
    bne $a2, 27, exit_set_combat_X############# BIG WARNING CUS I DIDN'T DOCUMENT ANYTHING
     #$a2 ONLY STORES COLOR VALUE AFTER ENTITY TYPE IS DETERMINED
   set_combat_X :
@@ -607,34 +608,43 @@
 
   load_wrapped_addresses :
      s7wrappedAddresses # set $s7 to wrapped address microstack
-     addi $s5, $s5, 32
+     addi $s5, $0, 32 #s5 contains modulo value for wraparound
      add $t7, $s7, $0 # write $s7 into $t7, wiper across the microstack
    stack_push
       jal pull_address_pos1
+      s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos2
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos3
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos4
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos5
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos6
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos7
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos8
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
       jal pull_address_pos9
+       s7wrappedAddresses ### within pull_address_pos1, s7 is rewritten to the gameboard pointer. corrective measure.
          sw $t5, 0($t7) # store pos_address into corresponding pos of microstack
          addi $t7, $t7, 4 # move up 1 pos in the microstack
    stack_pop # done populating the microstack
@@ -659,6 +669,7 @@
         lw $t6, 0($t4) # load value stored at offset from wrappedAddresses address into $t6
         sw $t6, 0($t5) # store value $t4 @ current address into the word above the address
         addi $t4, $t4, 4 # push forward microstack wiper by a dataword
+        addi $t5, $t5, 4
         addi $t7, $t7, 1
       j surroundings_fill_loop
   exit_surroundings_fill_loop :
@@ -688,7 +699,12 @@
 
   rabbit_decision_tree :
   ### allowing T registers to be overwritten and currently held values recalled upon returning to the main game array loop
-   stash_t_registers1 # $t registers now cool to overwrite
+  stack_push
+  #jal load_wrapped_addresses  X0X this should be a child function within load_surroundings and is wreaking havoc currently
+  jal load_surroundings ## loading addresses and values of surrounding tiles to the entity of focus
+  stack_pop
+   
+     stash_t_registers1 # $t registers now cool to overwrite
           li $t9, 44  ### initial offset to l6
   position_in_surBufferR :
    s7surroundingBuffer
@@ -706,9 +722,9 @@
           li $t9, 4 # resetting $t9 to FOUR, since we are looking at VALUES and decrementing from value to location
       j position_in_surBufferR
   top_of_treeR :
-  lw $t3, 0($s7)
+
   ###############################################################################
-  bne $t3, 14, exit_lion_decisionR #not a lion
+  bne $t4, 14, exit_lion_decisionR #not a lion
   ###############################################################################
 
      s7surroundingBuffer ## redundance is the virtue of those with memory
@@ -927,7 +943,7 @@
   #li $t0, 0
   #li $t1, 0
 
-  play_a_unit:
+  play_a_round:
 
   gameplay_unit:
 
@@ -942,15 +958,18 @@
        mul $t2, $t2, 32 # #rowIndex * numcols
        add $t2, $t0, $t2 # rowIndex* ncols + colIndex
        sll $t2, $t2, 2  # rowIndex * ncols + colIndex ) << bytewidth
-       add $t2, $t2, $s0 # #rowIndex * ncols + colIndex << bytewidth
+       add $t2, $t2, $s7 # #rowIndex * ncols + colIndex << bytewidth + pointer
+       #### uber mega experimental to make the paint actually work 
+       addi $a3, $t2, 0
+       ####
        lw $t2, 0($t2) # load into $t2 the value @ t2
 
-  beq $t2, 13, rabbit_in_unit_func
-  beq $t2, 14, lion_in_unit_func
+  beq $t2, 13, rabbit_in_unit_func # if not rabbit, check if lion
+  beq $t2, 14, lion_in_unit_func # if lion (or rabbit IC above), jump to the function that will take us on the path to writing a lion
   bne $t2, 14, skip_in_unit_func
-
+  # otherwise, move to the next function on the board (this is verified working at least, JFC)
   in_unit_function_next :
-       addi $t0, $t0, 1
+    addi $t0, $t0, 1
     j unit_loop_column
 
   rabbit_in_unit_func :
