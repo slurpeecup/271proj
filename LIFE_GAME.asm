@@ -505,7 +505,7 @@
   wraparound_colplus :
     #laboring under the assumption that $t0 is our column index
     addi $t4, $t0, 0 # $t4 = col index
-    addi $t4, $t4, 31 # (colindex - 1 + 32)
+    addi $t4, $t4, 33 # (colindex + 1 + 32)
     div $t4, $s5 #mod
     mfhi $t4 #mod
   end_wraparound_colplus :
