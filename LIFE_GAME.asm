@@ -43,13 +43,13 @@ food_row8_sprite: .word 0xc8bfe7,0xa1a1a1,0xa1a1a1,0xc8bfe7,0xc8bfe7,0xc8bfe7,0x
         
 ############### STONE SPRITE ##################
 stone_row1_sprite: .word 0xc8bfe7,0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0xc8bfe7,0xc8bfe7
-stone_row2_sprite: .word 0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0x7f7f7f       
-stone_row3_sprite: .word 0x7f7f7f,0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f      
-stone_row4_sprite: .word 0xc8bfe7,0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0xc8bfe7       
-stone_row5_sprite: .word 0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0xc8bfe7      
+stone_row2_sprite: .word 0xc8bfe7,0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0xc8bfe7       
+stone_row3_sprite: .word 0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7      
+stone_row4_sprite: .word 0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7       
+stone_row5_sprite: .word 0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7      
 stone_row6_sprite: .word 0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7      
-stone_row7_sprite: .word 0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f       
-stone_row8_sprite: .word 0xc8bfe7,0x7f7f7f,0xc8bfe7,0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f       
+stone_row7_sprite: .word 0xc8bfe7,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0x7f7f7f,0xc8bfe7,0xc8bfe7       
+stone_row8_sprite: .word 0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7       
 ################################################# 
 
 ############### EMPTY SPRITE ##################
@@ -67,6 +67,18 @@ empty_row8_sprite: .word 0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0
  ############################################################################################################################################
  ############################################################################################################################################
  ############################################################################################################################################       
+ 
+ .macro prime
+ add $s6, $0, $s1 ### $s6 holds our true row index temporarily
+ add $s5, $0, $s0 ### $5 holds our true col index temporarily
+ .end_macro
+ 
+ 
+ .macro unprime
+move $s1, $s6 ### $s6 holds our true row index temporarily
+move $s0, $s5 ### $5 holds our true col index temporarily
+ .end_macro
+ 
  
   .macro stash_t_registers1
         la $s7,registerStack1 # setting pointer control to register stack 1
@@ -140,11 +152,11 @@ empty_row8_sprite: .word 0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0
   .end_macro
  
   .macro wraparound_rowconst
-        addi $t5,$t1,0 ## this was honestly just too trivial to turn into a function,
+        addi $s1,$s6,0 ## this was honestly just too trivial to turn into a function,
   .end_macro       ## but a necessary abstraction for the sake of consistency
  
   .macro wraparound_colconst
-        addi $t4,$t0,0 ## this was honestly just too trivial to turn into a function,
+        addi $s0,$s5,0 ## this was honestly just too trivial to turn into a function,
   .end_macro       ## but a necessary abstraction for the sake of consistency
 
             ####################### CONSOLE OUTPUT SHIT,PROBABLY DEPRECATED ################################
@@ -334,35 +346,158 @@ jr $ra
 
 #################################################################################################################################    
 #################################################################################################################################  
-
-
-
-
-
-
-
-
-
   paint_full_grid:
       RST_TICKER
-      RST_TICKER_2
+      RST_TICKER_2    # resetting $t8 and $t9 to ensure cleanliness 
 
       paint_per_array_row :
 
-  beq $s1,32,exit_paint_per_array_row
+  beq $s1,32,exit_paint_per_array_row  # looping on each row of the gameboard array
   li $s0,0
   paint_per_array_col :
-      beq $s0,32,exit_paint_per_array_col
+      beq $s0,32,exit_paint_per_array_col   # looping on each column in the chosen row
       stack_push
-      jal convert_master_index_to_gameboard
-      jal convert_gameboard_address_to_framePointer
+      jal convert_master_index_to_gameboard           
+      jal convert_gameboard_address_to_framePointer  # these names really explain themselves.
       jal draw_from_entity_value
       stack_pop
-      addi $s0, $s0, 1
+      addi $s0, $s0, 1 #index position in columns
       j paint_per_array_col
   exit_paint_per_array_col :
-      addi $s1,$s1,1 ### incrementing the row counter
+      addi $s1,$s1,1 ### incrementing the row counter # index position in rows
       j paint_per_array_row
   exit_paint_per_array_row :
   exit_paint_full_grid:
       jr $ra
+#################################################################################################################################    
+###############################    Wraparound Address Calculation Functions   ###################################################
+#################################################################################################################################
+
+# because our gameboard is technically circular (because fuckkkkkk bounds checking), a suite of functions needs to exist that will
+# allow us to consider all tiles immediately around an entity, even if that entity is on one of the map edges.
+
+
+# my brain is so tired, but i need to document. wrote a macro set called prime and unprime, idea is to keep the true, gameboard authentic
+# indexes in $s6 and $s5, then return them after each operation has been done with the wraparounds. it is gross, but it is what i deserve.
+
+wraparound_rowminus:
+    # laboring under the assumption that $s6 is our TRUE row index
+    addi $s1, $s6, 0 #t4 contains the new row index
+    addi $s1, $s1, 31 # (rowIndex - 1 + 32)
+    div $s1, $a0 # div w / intent to access remainder from mfhi, effectively mod32
+    mfhi $s1 # $t5 mod 32
+  end_wraparound_rowminus:
+    jr $ra
+
+  wraparound_rowplus :
+    # laboring under the assumption that $t1 is our row index
+    addi $s1, $s6, 0 #t5 contains the new row index
+    addi $s1, $s1, 33 # (rowIndex + 1 + 32)
+    div $s1, $a0 # div w / intent to access remainder from mfhi, effectively mod31
+    mfhi $s1 # $t4 mod 32
+  end_wraparound_rowplus:
+    jr $ra
+
+  wraparound_colminus :
+    #laboring under the assumption that $s0 is our column index
+    addi $s0, $s5, 0 # $t4 = col index
+    addi $s0, $s0, 31 # (colindex - 1 + 32)
+    div $s0, $a0 #mod
+    mfhi $s0 #mod
+  end_wraparound_colminus :
+    jr $ra
+
+  wraparound_colplus :
+    #laboring under the assumption that $s0 is our column index
+    addi $s0, $s5, 0 # $t4 = col index
+    addi $s0, $s0, 33 # (colindex + 1 + 32)
+    div $s0, $a0 #mod
+    mfhi $s0 #mod
+  end_wraparound_colplus :
+    jr $ra
+
+################################### Wwrapped Address Calculator #################################################################    
+###################################                             #################################################################  
+
+# at this point im incredibly sleepy and this just should not work lol. takes wrapped addresses, stashes them in that array.
+
+ pull_wrappedAddresses :
+ la $t7, wrappedAddresses
+    stack_push
+     prime
+      jal wraparound_colminus  ## arr[X - 1][Y - 1]
+      jal wraparound_rowminus
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4
+      
+      
+     unprime
+     prime
+      wraparound_colconst  ## arr[X - 1][Y - 1]
+      jal wraparound_rowminus
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4 
+      
+     unprime
+     prime
+      jal wraparound_colplus  ## arr[X - 1][Y + 1]
+      jal wraparound_rowminus
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4 
+      
+     unprime
+     prime
+      jal wraparound_colminus  ## arr[X][Y - 1]
+      wraparound_rowconst
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4 
+      
+     unprime
+     prime
+       wraparound_colconst  ## arr[X][Y]
+      wraparound_rowconst
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4
+      
+     unprime
+     prime
+       jal wraparound_colplus  ## arr[X][Y + 1]
+      wraparound_rowconst
+      jal convert_master_index_to_gameboard
+      sw $a3, 0($t7)
+      addi $t7, $t7, 4 
+      
+     unprime
+     prime
+       jal wraparound_colminus ## arr[X + 1][Y - 1]
+      jal wraparound_rowplus
+       jal convert_master_index_to_gameboard
+       sw $a3, 0($t7)
+      addi $t7, $t7, 4
+      
+      unprime
+      prime
+        wraparound_colconst  # arr[X + 1][Y]
+       jal wraparound_rowplus
+        jal convert_master_index_to_gameboard
+        sw $a3, 0($t7)
+      addi $t7, $t7, 4 
+      unprime
+      prime
+        jal wraparound_colplus  # arr[X + 1][Y + 1]
+       jal wraparound_rowplus
+        jal convert_master_index_to_gameboard
+        sw $a3, 0($t7)
+      addi $t7, $t7, 4
+      
+      unprime
+    stack_pop
+  exit_pull_wrappedAddresses :
+    jr $ra
+#################################################################################################################################    
+#################################################################################################################################   
