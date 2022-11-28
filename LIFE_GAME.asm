@@ -186,7 +186,7 @@ li $s0,0
         
         li $a0, 32
     jal paint_full_grid
-  
+    jal play_a_full_round
 
     endgame_condition_not_met_reset:
       s7gameboard
@@ -302,8 +302,8 @@ jr $ra
 convert_gameboard_address_to_framePointer:
 RST_TICKER
 RST_TICKER_2
+       lw $a2, 0($s2) # value within the address is now at $a2
        la $s7, gameboard ### setting $s7 to gameboard pointer for fun
-       lw $a2, 0($s2)
        sub $s2, $s2, $s7 # $a7 now equals distance from gameboard pointer WRT (gameboard scale distance)
        li $t9, 128 # gameboard width is 32 * 4 bytes, stored in $t9
        div $s2, $t9 # with this division, we get a quotient and remainder that will give us our offset in terms of rows and columns
@@ -341,6 +341,7 @@ mul $t8, $t8, $a0 #(row index * numcols)
 add $s2, $t8, $t9 #(row index * ncols) + col index 
 sll $s2, $s2, 2 # ((row index * ncols) + col index) << bytewidth
 add $s2, $s2, $s7 # gameboard base pointer + ((row index * ncols) + col index) << bytewidth
+lw $a2, 0($s2) # value within the address is now at $a2
 exit_convert_master_index_to_gameboard:
 jr $ra
 
@@ -424,15 +425,13 @@ wraparound_rowminus:
  pull_wrappedAddresses :
  la $t7, wrappedAddresses
     stack_push
-     prime
+     prime # stash those indexes
       jal wraparound_colminus  ## arr[X - 1][Y - 1]
       jal wraparound_rowminus
       jal convert_master_index_to_gameboard
       sw $a3, 0($t7)
       addi $t7, $t7, 4
-      
-      
-     unprime
+     unprime #reset those indexes ... not going to repeat these each time. 
      prime
       wraparound_colconst  ## arr[X - 1][Y - 1]
       jal wraparound_rowminus
@@ -501,3 +500,135 @@ wraparound_rowminus:
     jr $ra
 #################################################################################################################################    
 #################################################################################################################################   
+
+# an aside... so where we are now, we have a function that will get you -> a unit @ address and gameboard address given master index, and 
+# a frameboard pointer. where do we take this? the game has to, for each space on the gameboard, identify if the value it stands on is a lion or a rabbit.
+# if either one of those entities, it must que up the surrounding addresses, then choose a new position to move to. it must move to that position, then redraw
+# its surroundings with respect to its initial point accordingly. let's accomplish that here.
+
+play_a_full_round:
+
+li $s0, 0
+li $s1, 0 
+
+
+
+
+gameplay_round_rows:
+beq $s1, 8, exit_gameplay_round_rows
+
+     
+gameplay_round_cols:
+beq $s0, 8, exit_gameplay_round_cols
+     stack_push
+     jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
+     beq $a2, 14, lion_decision_tree
+     beq $a2, 13, rabbit_decision_tree
+     stack_pop
+     return_from_decision_tree:
+
+addi $s0, $s0, 1
+j gameplay_round_cols
+exit_gameplay_round_cols:
+addi $s1, $s1, 0
+li $s0, 0
+j gameplay_round_rows
+
+
+
+
+exit_gameplay_round_rows:
+jr $ra
+
+
+###################################     Rabbit Behavior Tree     ################################################################   
+###################################                              ################################################################ 
+rabbit_decision_tree:
+stack_push
+jal pull_wrappedAddresses
+
+probe_random_within_wrappedAddressesR:
+move $t2, $a1
+li $v0, 42
+li $a1, 9
+syscall
+move $a1, $t3
+move $t2, $a1
+sll $t3, $t3, 2
+s7wrappedAddresses
+
+add $t3, $t3, $s7
+lw $t2, 0($s7)
+lw $t3, 0($t2)
+
+beq $t3, 11, probe_random_within_wrappedAddressesR
+beq $t3, 13, probe_random_within_wrappedAddressesR
+
+li $t3, 13
+sw $t3, 0($t2)
+
+s7wrappedAddresses
+
+lw $t2, 16($s7)
+sw $0, 0($t2)
+
+jal draw_9x9
+
+stack_pop
+j return_from_decision_tree
+###################################      Lion Behavior Tree      ################################################################  
+###################################                              ################################################################ 
+lion_decision_tree:
+stack_push
+jal pull_wrappedAddresses
+
+probe_random_within_wrappedAddressesL:
+move $t2, $a1
+li $v0, 42
+li $a1, 9
+syscall
+move $a1, $t3
+move $t2, $a1
+sll $t3, $t3, 2
+s7wrappedAddresses
+
+add $t3, $t3, $s7
+lw $t2, 0($s7)
+lw $t3, 0($t2)
+
+beq $t3, 11, probe_random_within_wrappedAddressesL
+beq $t3, 14, probe_random_within_wrappedAddressesL
+
+li $t3, 13
+sw $t3, 0($t2)
+
+s7wrappedAddresses
+
+lw $t2, 16($s7)
+sw $0, 0($t2)
+
+jal draw_9x9
+
+stack_pop
+j return_from_decision_tree
+###################################           Draw 9X9           ################################################################  
+###################################                              ################################################################ 
+
+draw_9x9:
+stack_push
+s7wrappedAddresses
+li $t5, 0
+draw_9x9_linear_loop:
+beq $t5, 36, end_draw_9x9_linear_loop
+add $s7, $t5, $s7
+lw $t4, 0($s7)
+move $a1, $t4
+jal convert_gameboard_address_to_framePointer 
+jal draw_from_entity_value
+s7wrappedAddresses
+addi $t5, $t5, 4
+j draw_9x9_linear_loop
+end_draw_9x9_linear_loop:
+stack_pop
+end_draw_9x9:
+jr $ra
