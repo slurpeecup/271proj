@@ -77,6 +77,17 @@ move $s1, $s6 ### $s6 holds our true row index temporarily
 move $s0, $s5 ### $5 holds our true col index temporarily
  .end_macro
  
+ .macro prime2
+ add $s6, $0, $t7 ### $s6 holds our true row index temporarily
+ add $s5, $0, $t6 ### $5 holds our true col index temporarily
+ .end_macro
+ 
+ 
+ .macro unprime2
+move $s1, $t7 ### $s6 holds our true row index temporarily
+move $s0, $t6 ### $5 holds our true col index temporarily
+ .end_macro
+
  
   .macro stash_t_registers1
         la $s7,registerStack1 # setting pointer control to register stack 1
@@ -157,18 +168,7 @@ move $s0, $s5 ### $5 holds our true col index temporarily
         addi $s0,$s5,0 ## this was honestly just too trivial to turn into a function,
   .end_macro       ## but a necessary abstraction for the sake of consistency
  
-  .macro RST_address_control_path
-   li $a1, 0
-   li $a2, 0
-   li $a3, 0
-   li $v0, 0
-   li $t2, 0
-   li $t3, 0
-   li $s2, 32
-  .end_macro
-
-
-
+  
             ####################### CONSOLE OUTPUT SHIT,PROBABLY DEPRECATED ################################
     lions_won:.asciiz "Rabbits have gone extinct,Lions win."
     rabbits_won : .asciiz "Lions have gone extinct,Rabbits win."
@@ -191,12 +191,12 @@ move $s0, $s5 ### $5 holds our true col index temporarily
       syscall
 
 
-li $s0,0
+        li $s0,0
         li $s1,0
-        
         li $a0, 32
-  #  jal paint_full_grid
-    jal play_a_full_round
+
+   jal paint_full_grid
+   jal play_a_full_round
 
     endgame_condition_not_met_reset:
       s7gameboard
@@ -347,7 +347,7 @@ li $s2, 0 # resetting s2 per gameboard address
 add $t9, $0, $s0 # $t9 takes is our malleable column index
 add $t8, $0, $s1 # $t9 takes is our malleable row index
 
-mul $t8, $t8, $a0 #(row index * numcols)
+mul $t8, $t8, 32 #(row index * numcols)
 add $s2, $t8, $t9 #(row index * ncols) + col index 
 sll $s2, $s2, 2 # ((row index * ncols) + col index) << bytewidth
 add $s2, $s2, $s7 # gameboard base pointer + ((row index * ncols) + col index) << bytewidth
@@ -393,37 +393,41 @@ jr $ra
 # indexes in $s6 and $s5, then return them after each operation has been done with the wraparounds. it is gross, but it is what i deserve.
 
 wraparound_rowminus:
+    li $t0, 32
     # laboring under the assumption that $s6 is our TRUE row index
     addi $s1, $s6, 0 #t4 contains the new row index
     addi $s1, $s1, 31 # (rowIndex - 1 + 32)
-    div $s1, $a0 # div w / intent to access remainder from mfhi, effectively mod32
+    div $s1, $t0 # div w / intent to access remainder from mfhi, effectively mod32
     mfhi $s1 # $t5 mod 32
   end_wraparound_rowminus:
     jr $ra
 
   wraparound_rowplus :
+    li $t0, 32
     # laboring under the assumption that $t1 is our row index
     addi $s1, $s6, 0 #t5 contains the new row index
     addi $s1, $s1, 33 # (rowIndex + 1 + 32)
-    div $s1, $a0 # div w / intent to access remainder from mfhi, effectively mod31
+    div $s1, $t0 # div w / intent to access remainder from mfhi, effectively mod31
     mfhi $s1 # $t4 mod 32
   end_wraparound_rowplus:
     jr $ra
 
   wraparound_colminus :
+     li $t0, 32
     #laboring under the assumption that $s0 is our column index
     addi $s0, $s5, 0 # $t4 = col index
     addi $s0, $s0, 31 # (colindex - 1 + 32)
-    div $s0, $a0 #mod
+    div $s0, $t0 #mod
     mfhi $s0 #mod
   end_wraparound_colminus :
     jr $ra
 
   wraparound_colplus :
+     li $t0, 32
     #laboring under the assumption that $s0 is our column index
     addi $s0, $s5, 0 # $t4 = col index
     addi $s0, $s0, 33 # (colindex + 1 + 32)
-    div $s0, $a0 #mod
+    div $s0, $t0 #mod
     mfhi $s0 #mod
   end_wraparound_colplus :
     jr $ra
@@ -539,11 +543,7 @@ beq $s1, 32, exit_gameplay_round_rows
 gameplay_round_cols:
 beq $s0, 32, exit_gameplay_round_cols
      stack_push
-    
-      RST_address_control_path
-      
-       jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
-    
+     jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
      beq $a2, 14, lion_decision_tree
      beq $a2, 13, rabbit_decision_tree
      stack_pop
@@ -565,28 +565,32 @@ stack_push
 jal pull_wrappedAddresses
 
 probe_random_within_wrappedAddressesR:
+lw $0, 0($a1) # unwriting rabbit from current position
+
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-move $a1, $t3 # seizing wrapped address offset index into $t3
+
+move $t3, $a1 # seizing wrapped address offset index into $t3
 sll $t3, $t3, 3 # multiply by 8, index becomes true offset
+
 s7wrappedAddresses
-add $t3, $s7, $t3 # now $t3 contains the address of the wrapped address position
-prime
+li $t4, 0
+add $t4, $t3, $t4
+add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
+
+prime2
 lw $s1, 0($t3) # loading row index from wrapped address
-addi $t4, $t4, 4 # incremented wrapped address position
-addi $t3, $t3, 4 # incrementing wrapped address directly, for right now
+addi $t3, $t3, 4
 lw $s0, 0($t3) # loading column index 
-
-RST_address_control_path
 jal convert_master_index_to_gameboard
-
+unprime2
 beq $a2, 11, probe_random_within_wrappedAddressesR
 beq $a2, 13, probe_random_within_wrappedAddressesR
 
 li $t3, 13        ### write a rabbit into the gameboard
 sw $t3, 0($a1)
-unprime
+
 jal draw_9x9
 
 stack_pop
@@ -598,33 +602,32 @@ stack_push
 jal pull_wrappedAddresses
 
 probe_random_within_wrappedAddressesL:
-lw $0, 0($a1)
+lw $0, 0($a1) # unwriting lion from current position
+
+
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-move $a1, $t3 # seizing wrapped address offset index into $t3
+move $t3, $a1 # seizing wrapped address offset index into $t3
 sll $t3, $t3, 3 # multiply by 8, index becomes true offset
 s7wrappedAddresses
-add $t3, $s7, $t3 # now $t3 contains the address of the wrapped address position
-prime
+li $t4, 0
+add $t4, $t3, $t4
+add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
+
+prime2
 lw $s1, 0($t3) # loading row index from wrapped address
-addi $t4, $t4, 4 # incremented wrapped address position for next iteration
-addi $t3, $t3, 4 # incrementing wrapped address directly, for right now
+addi $t3, $t3, 4
 lw $s0, 0($t3) # loading column index 
-addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
-addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
-
-add $t9, $0, $s0  ## temp bandaid patch for what i believe is why
-add $t8, $0, $s1 ### drawing is currently broken
-
 jal convert_master_index_to_gameboard
+unprime2
 
 beq $a2, 11, probe_random_within_wrappedAddressesL
 beq $a2, 14, probe_random_within_wrappedAddressesL
 
 li $t3, 14        ### write a lion into the gameboard
 sw $t3, 0($a1)
-unprime
+
 jal draw_9x9
 
 stack_pop
@@ -634,32 +637,28 @@ j return_from_decision_tree
 
 draw_9x9:
 stack_push
+
+jal pull_wrappedAddresses
 s7wrappedAddresses
-li $t5, 0 # t5, 
+
+li $t5, 0 # t5
+
+
+la $t7, wrappedAddresses
 draw_9x9_linear_loop:
 beq $t5, 72, end_draw_9x9_linear_loop
-s7wrappedAddresses # resetting s7 to wrappedAddresses again, register conservery instead of using a temp to control offset
-
-
-add $s7, $t5, $s7 #add offset to 
-lw $s1, 0($s7) # row value into $s0
-addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
-addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
-lw $s0, 0($s7) # storing column value at the wrappedAddress index into $s1
-addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
-addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
-
-RST_address_control_path
-add $t9, $0, $s0
-add $t8, $0, $s1  ### bandaid patch for broken drawing
+lw $s1, 0($t7) #row index
+addi $t7, $t7,4
+addi $t5, $t5, 4
+lw $s0, 0($t7) # col index
+addi $t7, $t7,4
+addi $t5, $t5, 4
 
 jal convert_master_index_to_gameboard
 jal convert_gameboard_address_to_framePointer 
 jal draw_from_entity_value
-
-s7wrappedAddresses
-addi $t5, $t5, 4 #incrementing forward for the next iteration through the loop. 
 j draw_9x9_linear_loop
+
 end_draw_9x9_linear_loop:
 stack_pop
 end_draw_9x9:
