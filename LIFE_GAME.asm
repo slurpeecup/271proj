@@ -194,9 +194,10 @@ move $s0, $t6 ### $5 holds our true col index temporarily
         li $s0,0
         li $s1,0
         li $a0, 32
-
-   jal paint_full_grid
-   jal play_a_full_round
+    jal convert_master_index_to_gameboard
+    jal lion_decision_tree
+   #jal paint_full_grid
+   #jal play_a_full_round
 
     endgame_condition_not_met_reset:
       s7gameboard
@@ -544,10 +545,11 @@ gameplay_round_cols:
 beq $s0, 32, exit_gameplay_round_cols
      stack_push
      jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
+     stack_pop
      beq $a2, 14, lion_decision_tree
      beq $a2, 13, rabbit_decision_tree
-     stack_pop
      return_from_decision_tree:
+     
 addi $s0, $s0, 1
 j gameplay_round_cols
 exit_gameplay_round_cols:
@@ -600,35 +602,47 @@ j return_from_decision_tree
 lion_decision_tree:
 stack_push
 jal pull_wrappedAddresses
-
+#
+#
+# error lies between these lines.
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 probe_random_within_wrappedAddressesL:
 lw $0, 0($a1) # unwriting lion from current position
-
-
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-move $t3, $a1 # seizing wrapped address offset index into $t3
+move $t3, $a0 # seizing wrapped address offset index into $t3
 sll $t3, $t3, 3 # multiply by 8, index becomes true offset
 s7wrappedAddresses
 li $t4, 0
 add $t4, $t3, $t4
 add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
-
 prime2
 lw $s1, 0($t3) # loading row index from wrapped address
 addi $t3, $t3, 4
 lw $s0, 0($t3) # loading column index 
 jal convert_master_index_to_gameboard
 unprime2
-
 beq $a2, 11, probe_random_within_wrappedAddressesL
 beq $a2, 14, probe_random_within_wrappedAddressesL
 
 li $t3, 14        ### write a lion into the gameboard
 sw $t3, 0($a1)
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#
+#
+#
+######  bruh get rid of this
+li $v0, 10
+syscall
+################################
 
 jal draw_9x9
+
+######  bruh get rid of this 
+li $v0, 10
+syscall
+################################
 
 stack_pop
 j return_from_decision_tree
