@@ -1,9 +1,7 @@
 .data
         frameBuffer : .space 0x40000 ##4 byte spaces = 256 bytes per 32 elements per rows * 32 rows. 256 * 32 * 32 = 262144 byte or 0x40000 bytes
         gameboard : .word 0 : 1024 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
-        surroundingBuffer : .space 0x50 
-        wrappedAddresses : .space 0x50
-        rabbit_brain : .space 0x50
+        wrappedAddresses : .space 0xa0
         registerStack1 : .space 0x50
         index_within_decision_tree_loop : .space 0x4        #less effort than restructuring
         
@@ -158,6 +156,18 @@ move $s0, $s5 ### $5 holds our true col index temporarily
   .macro wraparound_colconst
         addi $s0,$s5,0 ## this was honestly just too trivial to turn into a function,
   .end_macro       ## but a necessary abstraction for the sake of consistency
+ 
+  .macro RST_address_control_path
+   li $a1, 0
+   li $a2, 0
+   li $a3, 0
+   li $v0, 0
+   li $t2, 0
+   li $t3, 0
+   li $s2, 32
+  .end_macro
+
+
 
             ####################### CONSOLE OUTPUT SHIT,PROBABLY DEPRECATED ################################
     lions_won:.asciiz "Rabbits have gone extinct,Lions win."
@@ -269,7 +279,7 @@ jr $ra
   RST_TICKER
   beq $t8, 8, exit_paint_selected_entity_rows #### on the occasion that $t8 exceeds ymax, exit the paint
   
-                 paint_selected_entity_columns:
+                 paint_selected_entity_columns: 
                  beq $t9, 8, exit_paint_selected_entity_columns # on the occasion that $t9 hits xmax, move back to xmin and increment Y
                        lw $v0, 0($a2)  #a2 contains the address of a color value, we dereference this address to obtain the color we want in $v0
                        sw $v0, 0($a3) #  a3 contains our current write address 
@@ -342,6 +352,7 @@ add $s2, $t8, $t9 #(row index * ncols) + col index
 sll $s2, $s2, 2 # ((row index * ncols) + col index) << bytewidth
 add $s2, $s2, $s7 # gameboard base pointer + ((row index * ncols) + col index) << bytewidth
 lw $a2, 0($s2) # value within the address is now at $a2
+add $a1, $0, $s2 # argument 1 contains gameboard address
 exit_convert_master_index_to_gameboard:
 jr $ra
 
@@ -428,72 +439,79 @@ wraparound_rowminus:
      prime # stash those indexes
       jal wraparound_colminus  ## arr[X - 1][Y - 1]
       jal wraparound_rowminus
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
      unprime #reset those indexes ... not going to repeat these each time. 
      prime
       wraparound_colconst  ## arr[X - 1][Y - 1]
       jal wraparound_rowminus
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4 
-      
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
      unprime
      prime
       jal wraparound_colplus  ## arr[X - 1][Y + 1]
       jal wraparound_rowminus
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4 
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       
      unprime
      prime
       jal wraparound_colminus  ## arr[X][Y - 1]
       wraparound_rowconst
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4 
+     sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       
      unprime
      prime
-       wraparound_colconst  ## arr[X][Y]
+      wraparound_colconst  ## arr[X][Y]
       wraparound_rowconst
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       
      unprime
      prime
-       jal wraparound_colplus  ## arr[X][Y + 1]
+      jal wraparound_colplus  ## arr[X][Y + 1]
       wraparound_rowconst
-      jal convert_master_index_to_gameboard
-      sw $a3, 0($t7)
-      addi $t7, $t7, 4 
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       
      unprime
      prime
        jal wraparound_colminus ## arr[X + 1][Y - 1]
       jal wraparound_rowplus
-       jal convert_master_index_to_gameboard
-       sw $a3, 0($t7)
-      addi $t7, $t7, 4
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       
       unprime
       prime
         wraparound_colconst  # arr[X + 1][Y]
        jal wraparound_rowplus
-        jal convert_master_index_to_gameboard
-        sw $a3, 0($t7)
-      addi $t7, $t7, 4 
+      sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one space
       unprime
       prime
-        jal wraparound_colplus  # arr[X + 1][Y + 1]
+       jal wraparound_colplus  # arr[X + 1][Y + 1]
        jal wraparound_rowplus
-        jal convert_master_index_to_gameboard
-        sw $a3, 0($t7)
-      addi $t7, $t7, 4
-      
+        sw $s1, 0($t7) # store row index
+      addi $t7, $t7, 4 # shift forward by one space
+      sw $s0, 0($t7) # store col index
+      addi $t7, $t7, 4 # shift forward by one spa
       unprime
     stack_pop
   exit_pull_wrappedAddresses :
@@ -515,28 +533,27 @@ li $s1, 0
 
 
 gameplay_round_rows:
-beq $s1, 8, exit_gameplay_round_rows
+beq $s1, 32, exit_gameplay_round_rows
 
      
 gameplay_round_cols:
-beq $s0, 8, exit_gameplay_round_cols
+beq $s0, 32, exit_gameplay_round_cols
      stack_push
-     jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
+    
+      RST_address_control_path
+      
+       jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
+    
      beq $a2, 14, lion_decision_tree
      beq $a2, 13, rabbit_decision_tree
      stack_pop
      return_from_decision_tree:
-
 addi $s0, $s0, 1
 j gameplay_round_cols
 exit_gameplay_round_cols:
-addi $s1, $s1, 0
+addi $s1, $s1, 1
 li $s0, 0
 j gameplay_round_rows
-
-
-
-
 exit_gameplay_round_rows:
 jr $ra
 
@@ -548,30 +565,28 @@ stack_push
 jal pull_wrappedAddresses
 
 probe_random_within_wrappedAddressesR:
-move $t2, $a1
 li $v0, 42
-li $a1, 9
+li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-move $a1, $t3
-move $t2, $a1
-sll $t3, $t3, 2
+move $a1, $t3 # seizing wrapped address offset index into $t3
+sll $t3, $t3, 3 # multiply by 8, index becomes true offset
 s7wrappedAddresses
+add $t3, $s7, $t3 # now $t3 contains the address of the wrapped address position
+prime
+lw $s1, 0($t3) # loading row index from wrapped address
+addi $t4, $t4, 4 # incremented wrapped address position
+addi $t3, $t3, 4 # incrementing wrapped address directly, for right now
+lw $s0, 0($t3) # loading column index 
 
-add $t3, $t3, $s7
-lw $t2, 0($s7)
-lw $t3, 0($t2)
+RST_address_control_path
+jal convert_master_index_to_gameboard
 
-beq $t3, 11, probe_random_within_wrappedAddressesR
-beq $t3, 13, probe_random_within_wrappedAddressesR
+beq $a2, 11, probe_random_within_wrappedAddressesR
+beq $a2, 13, probe_random_within_wrappedAddressesR
 
-li $t3, 13
-sw $t3, 0($t2)
-
-s7wrappedAddresses
-
-lw $t2, 16($s7)
-sw $0, 0($t2)
-
+li $t3, 13        ### write a rabbit into the gameboard
+sw $t3, 0($a1)
+unprime
 jal draw_9x9
 
 stack_pop
@@ -583,30 +598,29 @@ stack_push
 jal pull_wrappedAddresses
 
 probe_random_within_wrappedAddressesL:
-move $t2, $a1
+lw $0, 0($a1)
 li $v0, 42
-li $a1, 9
+li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-move $a1, $t3
-move $t2, $a1
-sll $t3, $t3, 2
+move $a1, $t3 # seizing wrapped address offset index into $t3
+sll $t3, $t3, 3 # multiply by 8, index becomes true offset
 s7wrappedAddresses
+add $t3, $s7, $t3 # now $t3 contains the address of the wrapped address position
+prime
+lw $s1, 0($t3) # loading row index from wrapped address
+addi $t4, $t4, 4 # incremented wrapped address position for next iteration
+addi $t3, $t3, 4 # incrementing wrapped address directly, for right now
+lw $s0, 0($t3) # loading column index 
+addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
+addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
+jal convert_master_index_to_gameboard
 
-add $t3, $t3, $s7
-lw $t2, 0($s7)
-lw $t3, 0($t2)
+beq $a2, 11, probe_random_within_wrappedAddressesL
+beq $a2, 14, probe_random_within_wrappedAddressesL
 
-beq $t3, 11, probe_random_within_wrappedAddressesL
-beq $t3, 14, probe_random_within_wrappedAddressesL
-
-li $t3, 13
-sw $t3, 0($t2)
-
-s7wrappedAddresses
-
-lw $t2, 16($s7)
-sw $0, 0($t2)
-
+li $t3, 14        ### write a lion into the gameboard
+sw $t3, 0($a1)
+unprime
 jal draw_9x9
 
 stack_pop
@@ -617,16 +631,27 @@ j return_from_decision_tree
 draw_9x9:
 stack_push
 s7wrappedAddresses
-li $t5, 0
+li $t5, 0 # t5, 
 draw_9x9_linear_loop:
-beq $t5, 36, end_draw_9x9_linear_loop
-add $s7, $t5, $s7
-lw $t4, 0($s7)
-move $a1, $t4
+beq $t5, 72, end_draw_9x9_linear_loop
+s7wrappedAddresses # resetting s7 to wrappedAddresses again, register conservery instead of using a temp to control offset
+
+
+add $s7, $t5, $s7 #add offset to 
+lw $s1, 0($s7) # row value into $s0
+addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
+addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
+lw $s0, 0($s7) # storing column value at the wrappedAddress index into $s1
+addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
+addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
+
+RST_address_control_path
+jal convert_master_index_to_gameboard
 jal convert_gameboard_address_to_framePointer 
 jal draw_from_entity_value
+
 s7wrappedAddresses
-addi $t5, $t5, 4
+addi $t5, $t5, 4 #incrementing forward for the next iteration through the loop. 
 j draw_9x9_linear_loop
 end_draw_9x9_linear_loop:
 stack_pop
