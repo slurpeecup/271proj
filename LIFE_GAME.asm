@@ -186,7 +186,7 @@ move $s0, $s5 ### $5 holds our true col index temporarily
    bne $s3,0,rabbits_high # are rabbits == 0 ?
    check_lion_count:
    bne $s4,0,lions_high # are lions == 0 ?
-   
+   j extinction_check
    rabbits_high:
    li $s3, 1
    j check_lion_count
