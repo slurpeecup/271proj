@@ -4,8 +4,6 @@
         wrappedAddresses : .space 0xa0
         registerStack1 : .space 0x50
         pre_op_xy: .space 0x8     
-        
-        
 ############### RABBIT SPRITE ##################
 rabbit_row1_sprite: .word 0xc8bfe7,0xc8bfe7,0x7f7f7f,0xc8bfe7,0xc8bfe7,0x7f7f7f,0xc8bfe7,0xc8bfe7   
 rabbit_row2_sprite: .word 0xc8bfe7,0x7f7f7f,0xc8bfe7,0x7f7f7f,0x7f7f7f,0xc8bfe7,0x7f7f7f,0xc8bfe7       
@@ -181,14 +179,23 @@ move $s0, $s5 ### $5 holds our true col index temporarily
     endgame_condition_not_met_reset: 
     RST_INIT_CONDITIONS
     jal play_a_full_round
-    
-    li $v0, 10
-    syscall
-
-
-  bne $s3,0,endgame_condition_not_met_reset # are lions == 0 ?
-  bne $s4,0,endgame_condition_not_met_reset # are rabbits == 0 ?
-
+    li $s0, 0
+    li $s1, 0
+    jal count_all_entities
+ 
+   bne $s3,0,rabbits_high # are rabbits == 0 ?
+   check_lion_count:
+   bne $s4,0,lions_high # are lions == 0 ?
+   
+   rabbits_high:
+   li $s3, 1
+   j check_lion_count
+   lions_high:
+   li $s4, 1
+   extinction_check:
+   beq $s3, $s4, endgame_condition_not_met_reset
+   
+   
   li $v0,10
   syscall
 
@@ -518,11 +525,11 @@ beq $s0, 32, exit_gameplay_round_cols
      
      assign_pre_op_xy
      jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
-     beq $a2, 14, lion_decision_tree
-     beq $a2, 13, rabbit_decision_tree
+     beq $a2, 14, death_from_hunger
+     beq $a2, 13, death_from_hunger
      return_from_decision_tree:
-      load_pre_op_xy
  jal draw_9x9    
+ load_pre_op_xy
 addi $s0, $s0, 1
 j gameplay_round_cols
 exit_gameplay_round_cols:
@@ -559,7 +566,7 @@ jal convert_master_index_to_gameboard
 unprime
 beq $a2, 11, probe_random_within_wrappedAddressesR
 beq $a2, 13, probe_random_within_wrappedAddressesR
-li $t3, 14        ### write a lion into the gameboard
+li $t3, 13        ### write a rabbit into the gameboard
 sw $t3, 0($a1)
 stack_pop
 j return_from_decision_tree
@@ -594,16 +601,11 @@ stack_pop
 j return_from_decision_tree
 ###################################           Draw 9X9           ################################################################  
 ###################################                              ################################################################ 
-
 draw_9x9:
 stack_push
-
 jal pull_wrappedAddresses
 s7wrappedAddresses
-
 li $t5, 0 # t5
-
-
 la $t7, wrappedAddresses
 draw_9x9_linear_loop:
 beq $t5, 72, end_draw_9x9_linear_loop
@@ -613,13 +615,73 @@ addi $t5, $t5, 4
 lw $s0, 0($t7) # col index
 addi $t7, $t7,4
 addi $t5, $t5, 4
-
 jal convert_master_index_to_gameboard
 jal convert_gameboard_address_to_framePointer 
 jal draw_from_entity_value
 j draw_9x9_linear_loop
-
 end_draw_9x9_linear_loop:
 stack_pop
 end_draw_9x9:
 jr $ra
+
+###################################     Count All Entities       ################################################################  
+###################################                              ################################################################
+
+# Now that we've been able to get a playthrough of one round, we need to ensure that the game end conditions have been met. The game is 
+# meant to end after either the rabbits or lions go extinct, so now we will check how many of each entity is on the game board
+
+count_all_entities:
+stack_push
+count_all_entities_rows:
+  beq $s1,32,exit_count_all_entities_rows  # looping on each row of the gameboard array
+  li $s0,0
+  count_all_entities_cols :
+      beq $s0,32,exit_count_all_entities_cols   # looping on each column in the chosen row
+
+      jal convert_master_index_to_gameboard
+       
+      beq $a2, 13, increment_rabbit_total_count
+      beq $a2, 14, increment_lion_total_count  
+      j continue_to_count_all_entities
+      increment_rabbit_total_count:
+      addi $s3, $s3, 1
+      j continue_to_count_all_entities      
+      increment_lion_total_count:      
+      addi $s4, $s4, 1          
+      j continue_to_count_all_entities              
+      continue_to_count_all_entities:    
+        addi $s0, $s0, 1 #index position in columns
+      j count_all_entities_cols
+  exit_count_all_entities_cols :
+     
+      
+        addi $s1,$s1,1 ### incrementing the row counter # index position in rows
+      j count_all_entities_rows
+exit_count_all_entities_rows :
+
+stack_pop
+exit_count_all_entities :
+ jr $ra
+ 
+ ###################################     Death From Hunger       ################################################################  
+###################################                              ################################################################
+
+### Out in the wild, there is a good chance animals will just drop and die of starvation. Really, this helps the game keep from going
+### on for too long by offering easy outs to some pesky critters.
+
+death_from_hunger:
+add $t0, $0, $a1
+li $a1, 100
+li $v0, 42
+syscall
+blt $a0, 95, past_DFH
+add $a1, $0, $t0
+sw $0, 0($a1)
+li $a2, 0
+j return_from_decision_tree
+past_DFH:
+add $a1, $0, $t0
+bne $a2, 13, jlion
+j rabbit_decision_tree
+jlion:
+j lion_decision_tree
