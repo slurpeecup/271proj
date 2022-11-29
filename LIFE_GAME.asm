@@ -3,7 +3,7 @@
         gameboard : .word 0 : 1024 ##32 * 32 x 4 byte words = the range of words from 0 to 1024
         wrappedAddresses : .space 0xa0
         registerStack1 : .space 0x50
-        index_within_decision_tree_loop : .space 0x4        #less effort than restructuring
+        pre_op_xy: .space 0x8     
         
         
 ############### RABBIT SPRITE ##################
@@ -66,6 +66,21 @@ empty_row8_sprite: .word 0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0xc8bfe7,0
  ############################################################################################################################################
  ############################################################################################################################################       
  
+ .macro assign_pre_op_xy
+ la $s6, pre_op_xy
+ sw $s1, 0($s6)
+ addi $s6, $s6, 4
+ sw $s0, 0($s6)
+ .end_macro
+ 
+ .macro load_pre_op_xy
+ la $s6, pre_op_xy
+ lw $s1, 0($s6)
+ addi $s6, $s6, 4
+ lw $s0, 0($s6)
+ .end_macro
+ 
+ 
  .macro prime
  add $s6, $0, $s1 ### $s6 holds our true row index temporarily
  add $s5, $0, $s0 ### $5 holds our true col index temporarily
@@ -77,34 +92,13 @@ move $s1, $s6 ### $s6 holds our true row index temporarily
 move $s0, $s5 ### $5 holds our true col index temporarily
  .end_macro
  
-  .macro stash_t_registers1
-        la $s7,registerStack1 # setting pointer control to register stack 1
-        sw $t0,0($s7)
-        sw $t1,4($s7)
-        sw $t2,8($s7)
-        sw $t3,12($s7)
-        sw $t4,16($s7)
-        sw $t5,20($s7)  ## storing all tempregs
-        sw $t6,24($s7)
-        sw $t7,28($s7)
-        sw $t8,32($s7)
-        sw $t9,36($s7)
-  .end_macro
- 
-  .macro pull_t_registers1
-        la $s7,registerStack1 # setting pointer control to register stack 1
-        lw $t0,0($s7)
-        lw $t1,4($s7)
-        lw $t2,8($s7)
-        lw $t3,12($s7)
-        lw $t4,16($s7)
-        lw $t5,20($s7)  ## storing all tempregs
-        lw $t6,24($s7)
-        lw $t7,28($s7)
-        lw $t8,32($s7)
-        lw $t9,36($s7)
-  .end_macro
- 
+ .macro RST_INIT_CONDITIONS
+        li $s0,0
+        li $s1,0
+        li $s4, 0
+        li $s3, 0
+        li $a0, 32
+ .end_macro
   .macro RST_FRAMEPTR ### this macro resets the value of $a3 to the frame pointer
         la $a3,frameBuffer ### this trick is useful in functions where $a3 is a parameter
         .end_macro ### indexing the location in memory of a dataword w / respect to its distance
@@ -179,22 +173,18 @@ move $s0, $s5 ### $5 holds our true col index temporarily
       syscall
 
 
-        li $s0,0
-        li $s1,0
-        li $a0, 32
+        
 
    jal paint_full_grid
-   jal play_a_full_round
+ 
 
-    endgame_condition_not_met_reset:
-      s7gameboard
-        
-          stack_push
-#              jal play_a_round ### assuming $t0 is colindex and $t1 is rowindex.
-          stack_pop
+    endgame_condition_not_met_reset: 
+    RST_INIT_CONDITIONS
+    jal play_a_full_round
+    
+    li $v0, 10
+    syscall
 
-
-#  jal count_all_rabbits
 
   bne $s3,0,endgame_condition_not_met_reset # are lions == 0 ?
   bne $s4,0,endgame_condition_not_met_reset # are rabbits == 0 ?
@@ -517,26 +507,22 @@ wraparound_rowminus:
 # its surroundings with respect to its initial point accordingly. let's accomplish that here.
 
 play_a_full_round:
-
+stack_push
 li $s0, 0
 li $s1, 0 
-
-
-
-
 gameplay_round_rows:
-beq $s1, 32, exit_gameplay_round_rows
-
-     
+beq $s1, 32, exit_gameplay_round_rows   
+  
 gameplay_round_cols:
 beq $s0, 32, exit_gameplay_round_cols
-     stack_push
+     
+     assign_pre_op_xy
      jal convert_master_index_to_gameboard # per column index, convert the master index into a gba address
-     stack_pop
      beq $a2, 14, lion_decision_tree
      beq $a2, 13, rabbit_decision_tree
      return_from_decision_tree:
-     
+      load_pre_op_xy
+ jal draw_9x9    
 addi $s0, $s0, 1
 j gameplay_round_cols
 exit_gameplay_round_cols:
@@ -544,35 +530,27 @@ addi $s1, $s1, 1
 li $s0, 0
 j gameplay_round_rows
 exit_gameplay_round_rows:
+stack_pop
 jr $ra
 
 
 ###################################     Rabbit Behavior Tree     ################################################################   
 ###################################                              ################################################################ 
 rabbit_decision_tree:
+sw $0, 0($a1)
 stack_push
 jal pull_wrappedAddresses
-
 probe_random_within_wrappedAddressesR:
-lw $0, 0($a1) # unwriting rabbit from current position
-
-move $t2, $a1 #this, kids, is why we don't heavily crutch on using argument registers to hold semi-persistent values
 
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
-
-move $a1, $t2
-
-
-move $t3, $a1 # seizing wrapped address offset index into $t3
+move $t3, $a0 # seizing wrapped address offset index into $t3
 sll $t3, $t3, 3 # multiply by 8, index becomes true offset
-
 s7wrappedAddresses
 li $t4, 0
 add $t4, $t3, $t4
 add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
-
 prime
 lw $s1, 0($t3) # loading row index from wrapped address
 addi $t3, $t3, 4
@@ -581,21 +559,18 @@ jal convert_master_index_to_gameboard
 unprime
 beq $a2, 11, probe_random_within_wrappedAddressesR
 beq $a2, 13, probe_random_within_wrappedAddressesR
-
-li $t3, 13        ### write a rabbit into the gameboard
+li $t3, 14        ### write a lion into the gameboard
 sw $t3, 0($a1)
-
-jal draw_9x9
-
 stack_pop
 j return_from_decision_tree
 ###################################      Lion Behavior Tree      ################################################################  
 ###################################                              ################################################################ 
 lion_decision_tree:
+sw $0, 0($a1)
 stack_push
 jal pull_wrappedAddresses
 probe_random_within_wrappedAddressesL:
-lw $0, 0($a1) # unwriting lion from current position
+
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
@@ -613,12 +588,8 @@ jal convert_master_index_to_gameboard
 unprime
 beq $a2, 11, probe_random_within_wrappedAddressesL
 beq $a2, 14, probe_random_within_wrappedAddressesL
-
 li $t3, 14        ### write a lion into the gameboard
 sw $t3, 0($a1)
-
-jal draw_9x9
-
 stack_pop
 j return_from_decision_tree
 ###################################           Draw 9X9           ################################################################  
