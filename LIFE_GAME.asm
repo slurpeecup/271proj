@@ -77,18 +77,6 @@ move $s1, $s6 ### $s6 holds our true row index temporarily
 move $s0, $s5 ### $5 holds our true col index temporarily
  .end_macro
  
- .macro prime2
- add $s6, $0, $t7 ### $s6 holds our true row index temporarily
- add $s5, $0, $t6 ### $5 holds our true col index temporarily
- .end_macro
- 
- 
- .macro unprime2
-move $s1, $t7 ### $s6 holds our true row index temporarily
-move $s0, $t6 ### $5 holds our true col index temporarily
- .end_macro
-
- 
   .macro stash_t_registers1
         la $s7,registerStack1 # setting pointer control to register stack 1
         sw $t0,0($s7)
@@ -194,10 +182,9 @@ move $s0, $t6 ### $5 holds our true col index temporarily
         li $s0,0
         li $s1,0
         li $a0, 32
-    jal convert_master_index_to_gameboard
-    jal lion_decision_tree
-   #jal paint_full_grid
-   #jal play_a_full_round
+
+   jal paint_full_grid
+   jal play_a_full_round
 
     endgame_condition_not_met_reset:
       s7gameboard
@@ -569,9 +556,14 @@ jal pull_wrappedAddresses
 probe_random_within_wrappedAddressesR:
 lw $0, 0($a1) # unwriting rabbit from current position
 
+move $t2, $a1 #this, kids, is why we don't heavily crutch on using argument registers to hold semi-persistent values
+
 li $v0, 42
 li $a1, 9 # random number between 0 and 8, choosing an index along the wrapped addresses
 syscall
+
+move $a1, $t2
+
 
 move $t3, $a1 # seizing wrapped address offset index into $t3
 sll $t3, $t3, 3 # multiply by 8, index becomes true offset
@@ -581,12 +573,12 @@ li $t4, 0
 add $t4, $t3, $t4
 add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
 
-prime2
+prime
 lw $s1, 0($t3) # loading row index from wrapped address
 addi $t3, $t3, 4
 lw $s0, 0($t3) # loading column index 
 jal convert_master_index_to_gameboard
-unprime2
+unprime
 beq $a2, 11, probe_random_within_wrappedAddressesR
 beq $a2, 13, probe_random_within_wrappedAddressesR
 
@@ -602,10 +594,6 @@ j return_from_decision_tree
 lion_decision_tree:
 stack_push
 jal pull_wrappedAddresses
-#
-#
-# error lies between these lines.
-#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 probe_random_within_wrappedAddressesL:
 lw $0, 0($a1) # unwriting lion from current position
 li $v0, 42
@@ -617,32 +605,19 @@ s7wrappedAddresses
 li $t4, 0
 add $t4, $t3, $t4
 add $t3, $s7, $t4 # now $t3 contains the address of the wrapped address position
-prime2
+prime
 lw $s1, 0($t3) # loading row index from wrapped address
 addi $t3, $t3, 4
 lw $s0, 0($t3) # loading column index 
 jal convert_master_index_to_gameboard
-unprime2
+unprime
 beq $a2, 11, probe_random_within_wrappedAddressesL
 beq $a2, 14, probe_random_within_wrappedAddressesL
 
 li $t3, 14        ### write a lion into the gameboard
 sw $t3, 0($a1)
-#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-#
-#
-#
-######  bruh get rid of this
-li $v0, 10
-syscall
-################################
 
 jal draw_9x9
-
-######  bruh get rid of this 
-li $v0, 10
-syscall
-################################
 
 stack_pop
 j return_from_decision_tree
