@@ -195,7 +195,7 @@ li $s0,0
         li $s1,0
         
         li $a0, 32
-    jal paint_full_grid
+  #  jal paint_full_grid
     jal play_a_full_round
 
     endgame_condition_not_met_reset:
@@ -613,6 +613,10 @@ addi $t3, $t3, 4 # incrementing wrapped address directly, for right now
 lw $s0, 0($t3) # loading column index 
 addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress index
 addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
+
+add $t9, $0, $s0  ## temp bandaid patch for what i believe is why
+add $t8, $0, $s1 ### drawing is currently broken
+
 jal convert_master_index_to_gameboard
 
 beq $a2, 11, probe_random_within_wrappedAddressesL
@@ -646,6 +650,9 @@ addi $t5, $t5, 4 #moving forward to the column value at this wrappedAddress inde
 addi $s7, $s7, 4 # also moving forward $s7 by four to grab that next element.
 
 RST_address_control_path
+add $t9, $0, $s0
+add $t8, $0, $s1  ### bandaid patch for broken drawing
+
 jal convert_master_index_to_gameboard
 jal convert_gameboard_address_to_framePointer 
 jal draw_from_entity_value
