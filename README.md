@@ -3,4 +3,5 @@ This project is based off a simulation style game I'd encountered in a C++ cours
 
 ## How To Run This Game:
 The easiest way to run this game is to use the MARS MIPS Simulator/IDE, which I've included purely for convenience (All credit to Kenneth Volmer and Pete Sanderson at Missouri State University). MARS is a Java Executable and thus requires the user to have a somewhat recent version of the Java Runtime Environment. In MARS, after opening the LIFE_GAME.asm file, go to Tools > Bitmap Display on the top menu bar. Keeping a 1 unit per 256px scaling factor (ie, unit width 2, display width 512px) and a square gameboard, click "Connect to Mips" on the bottom left of the bitmap display menu. Then at the top menu, select Run > Assemble and then Run > Go. It is recommended to restart MARS after running the simulation two or three times, as the IDE has an unaddressed memory leak that causes performance issues for the simualation after a few runs.
+
 ![image](https://user-images.githubusercontent.com/98863078/204690568-4182beb1-de10-4c40-b071-0d1827744527.png)
